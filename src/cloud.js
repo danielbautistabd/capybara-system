@@ -4,6 +4,8 @@
    (productos, movimientos, compras…) se guarda fila por fila en la tabla public.cc_records,
    y los cambios de otros usuarios llegan en vivo por Realtime. */
 const CLOUD_TABLE = 'cc_records';
+// Proyecto de Supabase de Capybara Hostel. La clave anon es pública por diseño: sin sesión no da acceso a nada (RLS).
+const CLOUD_DEFAULT = { url: 'https://ghedaeyshfvlvvkafbyd.supabase.co', key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZWRhZXlzaGZ2bHZ2a2FmYnlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNjgzNDYsImV4cCI6MjEwOTg0NDM0Nn0.Db2V1P6GXUgODYMFBi7ymclDdzGGuMPST1KuIptq4jM' };
 const CLOUD_SKIP = new Set(['settings']);
 const canon = (x) => JSON.stringify(x, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((kk) => [kk, v[kk]])) : v));
 const isRecordList = (v) => Array.isArray(v) && v.every((x) => x && typeof x === 'object' && typeof x.id === 'string' && x.id);
@@ -11,7 +13,7 @@ const cloud = {
   sb: null, sbUrl: '', user: null, ready: false, loading: false, snap: new Map(),
   timer: null, retry: null, busy: false, again: false, chan: null, renderT: null,
   status: 'off', lastSaved: null, lastError: '',
-  cfg: () => S.settings.cloud || (S.settings.cloud = { on: false, url: '', key: '' }),
+  cfg: () => S.settings.cloud || (S.settings.cloud = { on: false, url: CLOUD_DEFAULT.url, key: CLOUD_DEFAULT.key }),
   on: () => !!(cloud.cfg().on && cloud.sb && cloud.user && cloud.ready),
   client() {
     const c = cloud.cfg();

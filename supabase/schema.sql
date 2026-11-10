@@ -15,7 +15,7 @@ create index if not exists cc_records_collection_pos on public.cc_records (colle
 
 -- Quién y cuándo cambió cada fila
 create or replace function public.cc_records_touch() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin
   new.updated_at := now();
   new.updated_by := auth.uid();
