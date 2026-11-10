@@ -1,4 +1,11 @@
-<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1E4A37">
+</head>
+<body>
 <title>Capybara Control</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="description" content="Inventario, marchados, compras, gastos y conciliación de Capybara Hostel">
@@ -479,8 +486,11 @@ td:first-child:has(.sub) b{min-width:150px}
 .caja-pays b{font-weight:600;font-variant-numeric:tabular-nums}
 .caja-who{display:flex;gap:6px;flex-wrap:wrap}
 @media (max-width:560px){.kpi-strip .kpi + .kpi{border-left:0}.caja{gap:12px}}
+
+/* Supabase: capa de carga */
+.cloud-ov{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:16px}
+.cloud-ov .card{display:grid;gap:6px;max-width:340px;text-align:center}
 </style>
-</head><body>
 <div class="app">
   <aside class="side" aria-label="Menú principal">
     <div class="brand">
@@ -501,8 +511,10 @@ td:first-child:has(.sub) b{min-width:150px}
   </div>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
+<div class="cloud-ov" id="cloud-ov" hidden><div class="card"><b>Cargando datos de Supabase…</b><span class="muted small">Un momento; la página se habilita al terminar.</span></div></div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 /* =====================================================================
  * Capybara Control — núcleo compartido (backend + frontend)
@@ -1573,7 +1585,7 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
 };
-const save = () => { if (S.settings.mode === 'demo') store.set(LS_KEY, S); store.set(LS_KEY + '-settings', S.settings); };
+const save = () => { const c = S.settings.cloud?.on; if (S.settings.mode === 'demo' && !c) store.set(LS_KEY, S); store.set(LS_KEY + '-settings', S.settings); if (c) cloud.queue(); };
 
 function seedState() {
   const R = rng(20261106);
@@ -1937,9 +1949,9 @@ const remote = {
     return data;
   },
   async health() { return remote.req('/health'); },
-  async login(email, password) { const d = await remote.req('/api/v1/auth/login', { method: 'POST', body: { email, password } }); S.settings.token = d.token; S.settings.user = d.user.name; save(); return d; },
+  async login(email, password) { const d = await remote.req('/api/v1/auth/login', { method: 'POST', body: { email, password } }); S.settings.token = d.token; S.settings.user = d.user.name; S.settings.role = d.user.role; S.settings.area = d.user.area || ''; save(); return d; },
   async load() {
-    const [products, movements, suppliers, purchases, expenses, inbox, categories] = await Promise.all(['/products?status=todos', '/movements?take=2000', '/suppliers', '/purchases', '/expenses', '/whatsapp/inbox', '/categories'].map((p) => remote.req('/api/v1' + p)));
+    const [products, movements, suppliers, purchases, expenses, inbox, categories] = await Promise.all(['/products?status=todos', '/movements?take=2000', '/suppliers', '/purchases', '/expenses', '/whatsapp/inbox', '/categories'].map((p, i) => remote.req('/api/v1' + p).catch((e) => { if (i === 0) throw e; return []; }))); // sin permiso para un recurso = lista vacía
     S.categories = categories;
     S.products = products.map((p) => ({ ...p, category: p.category, example: false }));
     S.movements = movements.map((m) => ({ ...m, user: m.user?.name || m.reportedBy || '', evidence: m.evidenceId, inboxId: m.inboxItemId }));
@@ -2035,7 +2047,7 @@ function renderNav() {
     const head = v.grp !== g ? `<div class="grp">${(g = v.grp)}</div>` : '';
     return `${head}<a href="#${k}" class="${view() === k ? 'on' : ''}" ${view() === k ? 'aria-current="page"' : ''}>${ic(v.ic)}<span>${v.short || v.t}</span>${c[k] ? `<span class="ct">${c[k]}</span>` : ''}</a>`;
   }).join('');
-  $('#mode-chip').innerHTML = S.settings.mode === 'api' ? `${pill('API conectada', 'p-ok')}<span class="small">${esc(remote.base())}</span>` : `${pill('Modo demostración', 'p-warn')}<span class="small">Datos de ejemplo en este navegador</span>`;
+  $('#mode-chip').innerHTML = S.settings.cloud?.on ? `${pill('Supabase', 'p-ok')}<span id="cloud-st">${cloud.statusHtml()}</span>` : S.settings.mode === 'api' ? `${pill('API conectada', 'p-ok')}<span class="small">${esc(remote.base())}</span>` : `${pill('Modo demostración', 'p-warn')}<span class="small">Datos de ejemplo en este navegador</span>`;
   $('#who').textContent = S.settings.user;
 }
 const charts = {};
@@ -2828,7 +2840,16 @@ RENDER.integraciones = () => {
   const s = S.settings, base = s.baseUrl || 'https://control.capybarahostel.com';
   return `
   <div class="grid g2" style="align-items:start">
-    <div class="card"><div class="card-h"><h2>Conexión con el backend</h2><span class="spacer"></span>${s.mode === 'api' ? pill('API conectada', 'p-ok') : pill('Modo demostración', 'p-warn')}</div>
+    <div class="card" style="grid-column:1/-1"><div class="card-h"><h2>Base de datos en Supabase</h2><span class="spacer"></span>${s.cloud?.on ? pill('Conectada', 'p-ok') : pill('Sin conectar', 'p-mut')}</div>
+      ${s.cloud?.on ? `<p class="small" style="margin:0 0 10px">Proyecto <span class="mono">${esc(s.cloud.url)}</span> · sesión de <b>${esc(cloud.user?.email || '—')}</b> · <span id="cloud-st">${cloud.statusHtml()}</span></p>
+      <p class="muted small" style="margin:0 0 10px">Cada cambio se guarda en Supabase en menos de un segundo y aparece en vivo para el resto del equipo.</p>
+      <div class="row"><button class="btn" id="sb-reload">Recargar desde Supabase</button><button class="btn" id="sb-out">Cerrar sesión y desconectar</button></div>` : `
+      <div class="grid g2"><div class="field"><label for="sb-url">URL del proyecto</label><input class="in mono" id="sb-url" value="${esc(s.cloud?.url || CLOUD_DEFAULT.url)}" placeholder="https://xxxx.supabase.co"></div><div class="field"><label for="sb-key">Clave anon (pública)</label><input class="in mono" id="sb-key" value="${esc(s.cloud?.key || CLOUD_DEFAULT.key)}" placeholder="eyJhbGciOi…"></div></div>
+      <div class="grid g2" style="margin-top:8px"><div class="field"><label for="sb-email">Correo</label><input class="in" id="sb-email" autocomplete="username" value="${esc(cloud.lastEmail || '')}" placeholder="admin@capybarahostel.com"></div><div class="field"><label for="sb-pw">Contraseña</label><input class="in" id="sb-pw" type="password" autocomplete="current-password"></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn pri" id="sb-go">Conectar con Supabase</button></div>
+      <p class="muted small" style="margin:10px 0 0">Las cuentas se crean en Supabase › Authentication › Users. Usa la clave <b>anon</b>, nunca la <span class="mono">service_role</span>.</p>`}
+    </div>
+    <div class="card"><div class="card-h"><h2>Conexión con el backend</h2><span class="spacer"></span>${s.cloud?.on ? pill('No se usa: datos en Supabase', 'p-mut') : s.mode === 'api' ? pill('API conectada', 'p-ok') : pill('Modo demostración', 'p-warn')}</div>
       <div class="field"><label for="ig-url">URL del backend</label><input class="in mono" id="ig-url" value="${esc(s.baseUrl)}" placeholder="https://control.capybarahostel.com"></div>
       <div class="grid g2" style="margin-top:8px"><div class="field"><label for="ig-email">Correo</label><input class="in" id="ig-email" value="admin@capybarahostel.com" autocomplete="username"></div><div class="field"><label for="ig-pw">Contraseña</label><input class="in" id="ig-pw" type="password" autocomplete="current-password"></div></div>
       <div class="row" style="margin-top:10px"><button class="btn" id="ig-test">Probar conexión</button><button class="btn pri" id="ig-login">Conectar con la API</button>${s.mode === 'api' ? '<button class="btn" id="ig-demo">Volver a modo demostración</button>' : ''}</div>
@@ -2839,7 +2860,7 @@ RENDER.integraciones = () => {
       <p class="muted small" style="margin:4px 0 10px">Por debajo del umbral, todo queda pendiente de aprobación. Recomendado: dejarlo apagado las primeras semanas.</p>
       <div class="grid g2"><div class="field"><label for="ig-th">Umbral de confianza</label><input class="in num" type="number" min="0.85" max="1" step="0.01" id="ig-th" value="${s.threshold}"></div><div class="field"><label for="ig-win">Ventana para duplicados (horas)</label><input class="in num" type="number" min="1" max="72" id="ig-win" value="${s.windowH}"></div></div>
       <div class="field" style="margin-top:8px"><label for="ig-user">Usuario actual</label><select class="in" id="ig-user">${USERS.map((u) => opt(u, u, s.user)).join('')}</select></div>
-      <div class="row" style="margin-top:12px"><button class="btn bad" id="ig-reset">Restablecer datos de ejemplo</button></div>
+      ${s.cloud?.on ? '' : '<div class="row" style="margin-top:12px"><button class="btn bad" id="ig-reset">Restablecer datos de ejemplo</button></div>'}
     </div>
   </div>
   <div class="grid g2" style="align-items:start">
@@ -2866,14 +2887,35 @@ WHATSAPP_TOKEN=EAAG…   WHATSAPP_PHONE_NUMBER_ID=…</div>
 };
 BIND.integraciones = (el) => {
   const s = S.settings;
+  $('#sb-go', el)?.addEventListener('click', async (e) => {
+    const url = $('#sb-url', el).value.trim().replace(/\/$/, ''), key = $('#sb-key', el).value.trim();
+    if (!/^https:\/\/[^/]+$/.test(url)) { toast('Escribe la URL del proyecto, por ejemplo https://xxxx.supabase.co'); return; }
+    if (!key) { toast('Pega la clave anon del proyecto (Settings › API).'); return; }
+    cloud.lastEmail = $('#sb-email', el).value.trim();
+    if (!cloud.lastEmail || !$('#sb-pw', el).value) { toast('Escribe el correo y la contraseña de tu usuario de Supabase.'); return; }
+    e.target.disabled = true;
+    try {
+      s.cloud = { on: false, url, key }; s.mode = 'demo';
+      await cloud.login(cloud.lastEmail, $('#sb-pw', el).value);
+      s.cloud.on = true;
+      await cloud.connect();
+      save(); render(); toast('Conectado con Supabase');
+    } catch (err) {
+      s.cloud.on = false; cloud.ready = false; cloud.setStatus('off');
+      try { await cloud.sb?.auth.signOut(); } catch { /* sin red */ }
+      save(); render(); toast('No se pudo conectar: ' + err.message);
+    }
+  });
+  $('#sb-reload', el)?.addEventListener('click', async () => { try { await cloud.load(); render(); toast('Datos recargados'); } catch (err) { toast('No se pudo recargar: ' + err.message); } });
+  $('#sb-out', el)?.addEventListener('click', async () => { if (await ask({ title: 'Desconectar Supabase', text: 'La página vuelve a los datos de ejemplo de este navegador. Los datos en Supabase no se borran.', label: 'Desconectar' })) { await cloud.disconnect(); toast('Desconectado'); } });
   $('#ig-test', el).onclick = async () => { s.baseUrl = $('#ig-url', el).value.trim(); try { const h = await remote.health(); toast(h.ok ? 'Conexión correcta: base de datos en línea' : 'El servicio respondió con error'); } catch (e) { toast('No hay conexión con ' + (s.baseUrl || 'el backend') + '. Dentro de claude.ai las llamadas externas están bloqueadas.'); } };
-  $('#ig-login', el).onclick = async () => { s.baseUrl = $('#ig-url', el).value.trim(); if (!s.baseUrl) { toast('Escribe la URL del backend.'); return; } try { await remote.login($('#ig-email', el).value, $('#ig-pw', el).value); await remote.load(); s.mode = 'api'; S.recon = null; save(); render(); toast('Conectado con la API'); } catch (e) { toast('No se pudo conectar: ' + e.message); } };
+  $('#ig-login', el).onclick = async () => { if (s.cloud?.on) { toast('Los datos ya están en Supabase. Desconéctalo antes de usar otro backend.'); return; } s.baseUrl = $('#ig-url', el).value.trim(); if (!s.baseUrl) { toast('Escribe la URL del backend.'); return; } try { await remote.login($('#ig-email', el).value, $('#ig-pw', el).value); await remote.load(); s.mode = 'api'; S.recon = null; save(); render(); toast('Conectado con la API'); } catch (e) { toast('No se pudo conectar: ' + e.message); } };
   $('#ig-demo', el)?.addEventListener('click', () => { const keep = { ...s, mode: 'demo', token: '' }; S = store.get(LS_KEY, null) || seedState(); S.settings = keep; save(); render(); });
   $('#ig-auto', el).onchange = (e) => { s.autoApply = e.target.checked; log('config.auto_aplicar', e.target.checked ? 'Activado' : 'Desactivado'); save(); render(); };
   $('#ig-th', el).onchange = (e) => { s.threshold = Math.max(0.85, Math.min(1, +e.target.value || 0.85)); save(); render(); };
   $('#ig-win', el).onchange = (e) => { s.windowH = +e.target.value || 12; save(); };
   $('#ig-user', el).onchange = (e) => { s.user = e.target.value; save(); renderNav(); };
-  $('#ig-reset', el).onclick = async () => { if (await ask({ title: 'Restablecer datos de ejemplo', text: 'Se borrarán los cambios hechos en este navegador y se cargarán de nuevo los datos de ejemplo.', label: 'Restablecer', danger: true })) { const keep = { ...s }; seedState(); S.settings = { ...S.settings, theme: keep.theme, user: keep.user }; save(); render(); toast('Datos de ejemplo restablecidos'); } };
+  if ($('#ig-reset', el)) $('#ig-reset', el).onclick = async () => { if (await ask({ title: 'Restablecer datos de ejemplo', text: 'Se borrarán los cambios hechos en este navegador y se cargarán de nuevo los datos de ejemplo.', label: 'Restablecer', danger: true })) { const keep = { ...s }; seedState(); S.settings = { ...S.settings, theme: keep.theme, user: keep.user }; save(); render(); toast('Datos de ejemplo restablecidos'); } };
   $$('[data-copy]', el).forEach((b) => (b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => toast('Copiado'), () => toast('Selecciona el texto y cópialo manualmente.'))));
 };
 
@@ -2885,6 +2927,7 @@ function boot() {
   if (settings) S.settings = { ...S.settings, ...settings };
   upgradeState();
   if (S.settings.mode === 'api') remote.load().then(render).catch(() => { S.settings.mode = 'demo'; toast('No se pudo conectar con la API; se muestran datos de ejemplo.'); render(); });
+  cloud.boot();
   applyTheme();
   $('#theme-btn').onclick = cycleTheme;
   $('#sync-btn').onclick = syncAndReconcile;
@@ -2893,6 +2936,208 @@ function boot() {
   render();
   save();
 }
+
+
+/* ---------------- Supabase (datos en la nube) ----------------
+   Toda la lógica de inventario sigue corriendo en el navegador. Cada colección del estado
+   (productos, movimientos, compras…) se guarda fila por fila en la tabla public.cc_records,
+   y los cambios de otros usuarios llegan en vivo por Realtime. */
+const CLOUD_TABLE = 'cc_records';
+// Proyecto de Supabase de Capybara Hostel. La clave anon es pública por diseño: sin sesión no da acceso a nada (RLS).
+const CLOUD_DEFAULT = { url: 'https://ghedaeyshfvlvvkafbyd.supabase.co', key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdoZWRhZXlzaGZ2bHZ2a2FmYnlkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQyNjgzNDYsImV4cCI6MjEwOTg0NDM0Nn0.Db2V1P6GXUgODYMFBi7ymclDdzGGuMPST1KuIptq4jM' };
+const CLOUD_SKIP = new Set(['settings']);
+const canon = (x) => JSON.stringify(x, (k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((kk) => [kk, v[kk]])) : v));
+const isRecordList = (v) => Array.isArray(v) && v.every((x) => x && typeof x === 'object' && typeof x.id === 'string' && x.id);
+const cloud = {
+  sb: null, sbUrl: '', user: null, ready: false, loading: false, snap: new Map(),
+  timer: null, retry: null, busy: false, again: false, chan: null, renderT: null,
+  status: 'off', lastSaved: null, lastError: '',
+  cfg: () => S.settings.cloud || (S.settings.cloud = { on: false, url: CLOUD_DEFAULT.url, key: CLOUD_DEFAULT.key }),
+  on: () => !!(cloud.cfg().on && cloud.sb && cloud.user && cloud.ready),
+  client() {
+    const c = cloud.cfg();
+    if (!window.supabase?.createClient) throw new Error('no cargó la librería de Supabase; revisa la conexión a internet');
+    if (!c.url || !c.key) throw new Error('falta la URL del proyecto o la clave anon');
+    if (!cloud.sb || cloud.sbUrl !== c.url + '|' + c.key) {
+      cloud.sb = window.supabase.createClient(c.url, c.key, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'capybara-control-sb' } });
+      cloud.sbUrl = c.url + '|' + c.key;
+    }
+    return cloud.sb;
+  },
+  /** Estado → filas. Clave "colección|id"; json = lo que se compara para saber si cambió. */
+  rows(state) {
+    const out = new Map();
+    const lists = [];
+    for (const [k, v] of Object.entries(state)) {
+      if (CLOUD_SKIP.has(k) || v === undefined || typeof v === 'function') continue;
+      if (isRecordList(v)) {
+        lists.push(k);
+        v.forEach((item, pos) => { const r = { collection: k, id: item.id, pos, data: item }; r.json = canon([pos, item]); out.set(k + '|' + item.id, r); });
+      } else {
+        const r = { collection: '_state', id: k, pos: 0, data: { v } }; r.json = canon([0, r.data]); out.set('_state|' + k, r);
+      }
+    }
+    const shape = { collection: '_shape', id: 'lists', pos: 0, data: { lists: lists.sort() } }; shape.json = canon([0, shape.data]); out.set('_shape|lists', shape);
+    return out;
+  },
+  takeSnapshot() { cloud.snap = new Map([...cloud.rows(S)].map(([k, r]) => [k, r.json])); },
+  setStatus(st, err = '') {
+    cloud.status = st; cloud.lastError = err;
+    if (st === 'ok') cloud.lastSaved = new Date();
+    const el = $('#cloud-st'); if (el) el.innerHTML = cloud.statusHtml();
+    const ov = $('#cloud-ov'); if (ov) ov.hidden = !cloud.loading;
+  },
+  statusHtml() {
+    const t = cloud.lastSaved ? cloud.lastSaved.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '';
+    return ({ off: pill('Sin conectar', 'p-mut'), loading: pill('Cargando…', 'p-info'), saving: pill('Guardando…', 'p-info'), ok: pill(t ? 'Guardado ' + t : 'Al día', 'p-ok'), error: pill('Sin guardar', 'p-bad') })[cloud.status] || '';
+  },
+  queue(delay = 700) { if (!cloud.on()) return; clearTimeout(cloud.timer); cloud.timer = setTimeout(cloud.flush, delay); },
+  async flush() {
+    if (!cloud.on()) return;
+    if (cloud.busy) { cloud.again = true; return; }
+    cloud.busy = true; clearTimeout(cloud.retry);
+    const sb = cloud.sb;
+    try {
+      const cur = cloud.rows(S);
+      const up = [...cur.values()].filter((r) => cloud.snap.get(r.collection + '|' + r.id) !== r.json);
+      const gone = [...cloud.snap.keys()].filter((k) => !cur.has(k));
+      if (!up.length && !gone.length) { if (cloud.status !== 'ok') cloud.setStatus('ok'); return; }
+      cloud.setStatus('saving');
+      for (let i = 0; i < up.length; i += 400) {
+        const { error } = await sb.from(CLOUD_TABLE).upsert(up.slice(i, i + 400).map(({ collection, id, pos, data }) => ({ collection, id, pos, data })), { onConflict: 'collection,id' });
+        if (error) throw error;
+      }
+      const byCol = {};
+      gone.forEach((k) => { const j = k.indexOf('|'); (byCol[k.slice(0, j)] ||= []).push(k.slice(j + 1)); });
+      for (const [col, ids] of Object.entries(byCol)) for (let i = 0; i < ids.length; i += 200) {
+        const { error } = await sb.from(CLOUD_TABLE).delete().eq('collection', col).in('id', ids.slice(i, i + 200));
+        if (error) throw error;
+      }
+      up.forEach((r) => cloud.snap.set(r.collection + '|' + r.id, r.json));
+      gone.forEach((k) => cloud.snap.delete(k));
+      cloud.setStatus('ok');
+    } catch (e) {
+      cloud.setStatus('error', e.message);
+      toast('No se guardó en Supabase: ' + e.message + '. Se reintentará en 15 s.');
+      cloud.retry = setTimeout(cloud.flush, 15000);
+    } finally {
+      cloud.busy = false;
+      if (cloud.again) { cloud.again = false; cloud.queue(100); }
+    }
+  },
+  /** Lee todo de Supabase. Devuelve false si la tabla está vacía. */
+  async fetchAll() {
+    const sb = cloud.client(), all = [];
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from(CLOUD_TABLE).select('collection,id,pos,data').order('collection').order('id').range(from, from + 999);
+      if (error) throw error;
+      all.push(...data);
+      if (data.length < 1000) break;
+    }
+    return all;
+  },
+  async load() {
+    cloud.loading = true; cloud.setStatus('loading');
+    try {
+      const all = await cloud.fetchAll();
+      if (!all.length) return false;
+      const st = {}, lists = {};
+      let shape = [];
+      for (const r of all) {
+        if (r.collection === '_shape') shape = r.data?.lists || [];
+        else if (r.collection === '_state') st[r.id] = r.data?.v;
+        else (lists[r.collection] ||= []).push(r);
+      }
+      shape.forEach((k) => (st[k] = []));
+      for (const [k, arr] of Object.entries(lists)) st[k] = arr.sort((a, b) => a.pos - b.pos).map((r) => r.data);
+      const settings = S.settings;
+      S = st; S.settings = settings;
+      cloud.takeSnapshot();
+      upgradeState();
+      cloud.ready = true;
+      cloud.setStatus('ok');
+      cloud.queue(); // sube lo que upgradeState haya completado
+      return true;
+    } finally { cloud.loading = false; cloud.setStatus(cloud.status); }
+  },
+  subscribe() {
+    if (cloud.chan) cloud.sb.removeChannel(cloud.chan);
+    cloud.chan = cloud.sb.channel('cc-records')
+      .on('postgres_changes', { event: '*', schema: 'public', table: CLOUD_TABLE }, (p) => cloud.applyRemote(p))
+      .subscribe();
+  },
+  applyRemote(p) {
+    if (!cloud.ready) return;
+    const row = p.eventType === 'DELETE' ? p.old : p.new;
+    if (!row?.collection || row.collection === '_shape') return;
+    const key = row.collection + '|' + row.id;
+    if (p.eventType === 'DELETE') {
+      if (!cloud.snap.has(key)) return;
+      cloud.snap.delete(key);
+      if (row.collection === '_state') delete S[row.id];
+      else if (Array.isArray(S[row.collection])) S[row.collection] = S[row.collection].filter((x) => x.id !== row.id);
+    } else {
+      const json = canon([row.collection === '_state' ? 0 : row.pos, row.data]);
+      if (cloud.snap.get(key) === json) return; // eco de un cambio propio
+      if (row.collection === '_state') S[row.id] = row.data?.v;
+      else {
+        const arr = Array.isArray(S[row.collection]) ? S[row.collection] : (S[row.collection] = []);
+        const i = arr.findIndex((x) => x.id === row.id);
+        if (i >= 0) arr[i] = row.data; else arr.splice(Math.min(row.pos ?? arr.length, arr.length), 0, row.data);
+      }
+      cloud.snap.set(key, json);
+    }
+    cloud.renderSoon();
+  },
+  renderSoon() {
+    clearTimeout(cloud.renderT);
+    cloud.renderT = setTimeout(() => { if ($('#modal') || document.activeElement?.matches?.('input,textarea,select')) { cloud.renderSoon(); return; } render(); }, 800);
+  },
+  async login(email, password) {
+    const sb = cloud.client();
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(error.message === 'Invalid login credentials' ? 'correo o contraseña incorrectos' : error.message);
+    cloud.user = data.user;
+    return data.user;
+  },
+  /** Conecta: sesión → carga → (si está vacía) ofrece subir los datos actuales. */
+  async connect() {
+    const had = await cloud.load();
+    if (!had) {
+      const up = await ask({ title: 'La base de datos está vacía', text: 'Puedes subir los datos que ves ahora en esta página como punto de partida. Después podrás editarlos o borrarlos desde la app.', label: 'Subir datos actuales' });
+      if (!up) { cloud.ready = false; throw new Error('no se subieron datos; la conexión quedó pendiente'); }
+      cloud.snap = new Map(); cloud.ready = true; cloud.setStatus('saving');
+      await cloud.flush();
+      if (cloud.status !== 'ok') throw new Error(cloud.lastError || 'no se pudieron subir los datos');
+    }
+    cloud.subscribe();
+  },
+  async disconnect() {
+    try { if (cloud.chan) await cloud.sb.removeChannel(cloud.chan); await cloud.sb?.auth.signOut(); } catch { /* sin red */ }
+    cloud.chan = null; cloud.user = null; cloud.ready = false; cloud.snap = new Map();
+    cloud.cfg().on = false;
+    const keep = { ...S.settings };
+    S = store.get(LS_KEY, null) || seedState(); S.settings = keep; upgradeState();
+    cloud.setStatus('off'); save(); render();
+  },
+  /** Al abrir la página: si estaba conectada y la sesión sigue viva, carga desde Supabase. */
+  async boot() {
+    if (!cloud.cfg().on) return;
+    cloud.loading = true; cloud.setStatus('loading');
+    try {
+      const sb = cloud.client();
+      const { data } = await sb.auth.getSession();
+      if (!data.session) { cloud.loading = false; cloud.setStatus('off'); toast('Tu sesión de Supabase terminó. Inicia sesión en Integraciones.'); return; }
+      cloud.user = data.session.user;
+      await cloud.connect();
+      render();
+    } catch (e) {
+      cloud.loading = false; cloud.ready = false; cloud.setStatus('error', e.message);
+      toast('No se pudo cargar desde Supabase: ' + e.message);
+      render();
+    }
+  },
+};
 
 /* ================= Capybara Control · app (5/5): roles, Mi turno, Inteligencia, Alegra, Control de acceso ================= */
 
@@ -2910,7 +3155,7 @@ function seedUsers() {
   ];
 }
 const ROLE_PILL = { ADMIN: 'p-bad', SUPERVISOR: 'p-warn', CAJERO: 'p-ok', EMPLEADO: 'p-info', SOCIO: 'p-info', AUDITOR: 'p-mut' };
-const me = () => S.users?.find((u) => u.name === S.settings.user) || S.users?.[0] || { name: S.settings.user, role: 'ADMIN', area: '' };
+const me = () => (S.settings.mode === 'api' && S.settings.role ? { ...(S.users?.find((u) => u.name === S.settings.user) || {}), name: S.settings.user, role: S.settings.role, area: S.settings.area || '' } : S.users?.find((u) => u.name === S.settings.user) || S.users?.[0] || { name: S.settings.user, role: 'ADMIN', area: '' });
 const can = (p) => hasPerm(me().role, p, S.rolePerms);
 const myAreas = () => { const u = me(); return [u.area, ...(u.areas || [])].filter(Boolean); };
 const inMyArea = (p) => { const a = myAreas(); return a.some((x) => (AREA_CATS[x] || []).includes(p.category) || normalize(p.location || '').includes(normalize(x))); };
@@ -3571,7 +3816,10 @@ ICON.upload = '<path d="M12 16V4m0 0-4 4m4-4 4 4"/><path d="M4 16v3a1 1 0 0 0 1 
 let IM = { file: null, sheets: [], sheet: '', matrix: [], headerRow: 0, headers: [], rows: [], mapping: {}, plan: null, sel: new Set(), filter: '', busy: false, done: null,
   opt: { matchBy: ['code', 'barcode', 'name'], stockMode: 'conteo', updateAvgCost: false, createSuppliers: true, defaultCategory: 'Otros' } };
 let downloadsP = null;
-const getDownloads = () => (downloadsP ||= (window.claude?.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null)));
+// En claude.ai usa la capacidad "downloads"; fuera de claude.ai (servidor propio) descarga directo con un enlace.
+const getDownloads = () => (downloadsP ||= (window.claude?.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null)).then((d) => d || (window.claude ? null : {
+  save: async ({ filename, data }) => { const url = URL.createObjectURL(new Blob([data])); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000); },
+})));
 const IM_ACT = { nuevo: ['Nuevo', 'p-info'], actualizar: ['Actualizar', 'p-warn'], sin_cambios: ['Sin cambios', 'p-mut'], error: ['Con error', 'p-bad'] };
 
 function imSetSheet(name) {
@@ -4037,8 +4285,64 @@ BIND.facturacion = (el) => {
   });
 };
 
+/* ---------- modo API: facturas, usuarios y permisos reales ---------- */
+const _remoteLoad = remote.load;
+remote.load = async () => {
+  await _remoteLoad();
+  const tryGet = (p) => remote.req('/api/v1' + p).catch(() => null);
+  const [rows, users, roles] = await Promise.all([tryGet('/invoices?format=rows'), tryGet('/users'), tryGet('/roles')]);
+  if (rows) {
+    const status = {};
+    for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId };
+    const drafts = (S.billing?.lines || []).filter((l) => l.localDraft);
+    S.billing = { next: 1, status, lines: [...rows.map((r) => ({ id: r.id, inv: r.inv, invoiceId: r.invoiceId, date: r.date, customer: r.customer, room: r.room || '', productId: r.productId, qty: r.qty, price: r.price, taxPct: r.taxPct, pay: r.pay })), ...drafts], draftPurchases: S.billing?.draftPurchases || [], history: [], historyV: 2 };
+  }
+  if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
+  if (roles?.matrix) S.rolePerms = roles.matrix;
+  S.alegra ||= null; S.imports ||= [];
+};
+const _newInvoice = newInvoice;
+newInvoice = function () { _newInvoice(); if (S.settings.mode === 'api') { const l = S.billing.lines[S.billing.lines.length - 1]; l.localDraft = true; l.inv = 'BORRADOR-' + Date.now().toString(36).toUpperCase().slice(-4); save(); render(); } };
+const _emitInvoice = emitInvoice;
+emitInvoice = async function (inv) {
+  if (S.settings.mode !== 'api') return _emitInvoice(inv);
+  const lines = S.billing.lines.filter((l) => l.inv === inv);
+  if (lines.some((l) => !l.productId || !(l.qty > 0))) return toast(`Completa producto y cantidad en todas las líneas de ${inv}.`);
+  const body = { date: lines[0].date, customerName: lines[0].customer || 'Consumidor final', room: lines[0].room || undefined, payMethod: lines[0].pay, lines: lines.map((l) => ({ productId: l.productId, qty: +l.qty, price: +l.price, taxPct: +l.taxPct })) };
+  try {
+    const id = lines[0].invoiceId;
+    const saved = id ? await remote.req(`/api/v1/invoices/${id}`, { method: 'PUT', body }) : await remote.req('/api/v1/invoices', { method: 'POST', body });
+    const r = await remote.req(`/api/v1/invoices/${saved.id}/issue`, { method: 'POST' });
+    S.billing.lines = S.billing.lines.filter((l) => l.inv !== inv);
+    await remote.load(); save(); render();
+    toast(`${saved.number} emitida${r.warnings?.length ? ' · ' + r.warnings.join('; ') : ''}`);
+  } catch (e) { toast('No se pudo emitir: ' + e.message); }
+};
+
+/* ---------- arranque: si la página la sirve el backend, pide iniciar sesión ---------- */
+function loginModal() {
+  const m = modal({ title: 'Iniciar sesión en Capybara Control', body: `
+    <div class="field"><label for="lg-email">Correo</label><input class="in" id="lg-email" type="email" autocomplete="username" value="${esc(S.settings.lastEmail || '')}"></div>
+    <div class="field"><label for="lg-pw">Contraseña</label><input class="in" id="lg-pw" type="password" autocomplete="current-password"></div>
+    <p class="muted small" id="lg-msg" style="margin:0">Servidor: <span class="mono">${esc(S.settings.baseUrl)}</span></p>`,
+    foot: `<button class="btn" id="lg-demo">Ver demostración</button><button class="btn pri" id="lg-ok">Entrar</button>` });
+  const go = async () => {
+    const email = m.querySelector('#lg-email').value.trim(), pw = m.querySelector('#lg-pw').value;
+    if (!email || !pw) return toast('Escribe tu correo y contraseña.');
+    try { const d = await remote.login(email, pw); S.settings.lastEmail = email; await remote.load(); S.settings.mode = 'api'; S.recon = null; if (!S.users.some((u) => u.name === d.user.name)) S.users.push({ id: d.user.id, name: d.user.name, role: d.user.role, area: d.user.area || '', areas: [], email, active: true }); S.settings.user = d.user.name; save(); closeModal(); location.hash = homeView(); render(); toast(`Hola, ${d.user.name}`); }
+    catch (e) { m.querySelector('#lg-msg').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+  };
+  m.querySelector('#lg-ok').onclick = go;
+  m.querySelector('#lg-pw').onkeydown = (e) => e.key === 'Enter' && go();
+  m.querySelector('#lg-demo').onclick = () => { closeModal(); toast('Modo demostración: los datos de ejemplo viven solo en este navegador.'); };
+}
 boot();
+if (window.CAPYBARA_API) {
+  S.settings.baseUrl ||= window.CAPYBARA_API;
+  if (!S.settings.token || S.settings.mode !== 'api') loginModal();
+}
 
 </script>
 
-</body></html>
+</body>
+</html>

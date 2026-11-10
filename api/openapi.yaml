@@ -1,0 +1,292 @@
+openapi: 3.1.0
+info:
+  title: Capybara Control API
+  version: 1.0.0
+  description: |
+    API de inventario, marchados, compras, gastos, WhatsApp, Google Sheets y conciliación de Capybara Hostel.
+    Todas las rutas /api/v1 (excepto /auth/login) requieren `Authorization: Bearer <token>`.
+    Los movimientos nunca se eliminan: se anulan con POST /movements/{id}/void.
+servers:
+  - url: https://control.capybarahostel.com
+  - url: http://localhost:8080
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  schemas:
+    MovementType:
+      type: string
+      enum: [entrada, devolucion, ajuste_pos, salida, marchado, consumo_interno, cortesia, danado, vencido, perdida, ajuste_neg]
+    Movement:
+      type: object
+      properties:
+        id: { type: string }
+        ts: { type: string, format: date-time }
+        productId: { type: string }
+        qty: { type: number }
+        unit: { type: string }
+        type: { $ref: '#/components/schemas/MovementType' }
+        area: { type: string }
+        reason: { type: string }
+        source: { type: string, enum: [manual, whatsapp, whatsapp_foto, whatsapp_audio, factura, sheets, conteo, sistema] }
+        status: { type: string, enum: [pendiente, aprobado, rechazado, anulado, duplicado, requiere_info] }
+        confidence: { type: number }
+        fingerprint: { type: string }
+        evidenceId: { type: string }
+    Interpretation:
+      type: object
+      properties:
+        type: { $ref: '#/components/schemas/MovementType' }
+        area: { type: string, nullable: true }
+        confidence: { type: number }
+        autoApplicable: { type: boolean, description: 'confidence >= 0.85' }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string, nullable: true }
+              productName: { type: string, nullable: true }
+              rawText: { type: string }
+              qty: { type: number }
+              unit: { type: string }
+              confidence: { type: number }
+    ReconRow:
+      type: object
+      properties:
+        productId: { type: string }
+        name: { type: string }
+        inicial: { type: number }
+        entradas: { type: number }
+        devoluciones: { type: number }
+        salidas: { type: number }
+        marchados: { type: number }
+        danos: { type: number }
+        vencidos: { type: number }
+        perdidas: { type: number }
+        teorico: { type: number }
+        fisico: { type: number, nullable: true }
+        diferencia: { type: number, nullable: true }
+        valor: { type: number, description: 'diferencia × costo promedio (COP)' }
+        status: { type: string, enum: [coincide, menor, importante, duplicado, sin_respaldo, no_registrado, sin_conteo] }
+security: [{ bearer: [] }]
+paths:
+  /health:
+    get: { summary: Estado del servicio y la base de datos, security: [], responses: { '200': { description: OK } } }
+  /webhooks/whatsapp:
+    get:
+      summary: Verificación del webhook (Meta)
+      security: []
+      parameters:
+        - { name: hub.mode, in: query, schema: { type: string } }
+        - { name: hub.verify_token, in: query, schema: { type: string } }
+        - { name: hub.challenge, in: query, schema: { type: string } }
+      responses: { '200': { description: Devuelve hub.challenge }, '403': { description: Token incorrecto } }
+    post:
+      summary: Recepción de mensajes de WhatsApp (firma X-Hub-Signature-256 obligatoria)
+      security: []
+      responses: { '200': { description: Recibido; se procesa en segundo plano } }
+  /api/v1/auth/login:
+    post:
+      summary: Iniciar sesión
+      security: []
+      requestBody: { content: { application/json: { schema: { type: object, properties: { email: { type: string }, password: { type: string } } } } } }
+      responses: { '200': { description: '{ token, user }' } }
+  /api/v1/dashboard:
+    get: { summary: Indicadores del tablero, responses: { '200': { description: KPIs } } }
+  /api/v1/dashboard/series:
+    get:
+      summary: Series para gráficos
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: group, in: query, schema: { type: string, enum: [day, week, month] } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: source, in: query, schema: { type: string } }
+      responses: { '200': { description: Series } }
+  /api/v1/categories:
+    get: { summary: Categorías, responses: { '200': { description: Lista } } }
+  /api/v1/products:
+    get:
+      summary: Catálogo
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: categoryId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [activo, inactivo, todos] } }
+        - { name: low, in: query, schema: { type: boolean } }
+      responses: { '200': { description: Productos } }
+    post: { summary: Crear producto (SUPERVISOR), responses: { '201': { description: Creado } } }
+  /api/v1/products/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { summary: Detalle con historial de precios, responses: { '200': { description: Producto } } }
+    patch: { summary: Editar producto, responses: { '200': { description: Actualizado } } }
+  /api/v1/products/{id}/history:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { summary: Kardex del producto, responses: { '200': { description: Movimientos } } }
+  /api/v1/products/{id}/deactivate:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Desactivar producto, responses: { '200': { description: OK } } }
+  /api/v1/movements:
+    get:
+      summary: Listar movimientos con filtros
+      parameters:
+        - { name: from, in: query, schema: { type: string } }
+        - { name: to, in: query, schema: { type: string } }
+        - { name: productId, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { $ref: '#/components/schemas/MovementType' } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: userId, in: query, schema: { type: string } }
+      responses: { '200': { description: Movimientos } }
+    post:
+      summary: Registrar movimiento (queda pendiente; approve=true lo aprueba si el rol lo permite)
+      responses: { '201': { description: '{ movement, duplicates }' } }
+  /api/v1/movements/{id}/approve:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Aprobar (opcional edits), responses: { '200': { description: OK } } }
+  /api/v1/movements/{id}/reject:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Rechazar, responses: { '200': { description: OK } } }
+  /api/v1/movements/{id}/duplicate:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Marcar como duplicado, responses: { '200': { description: OK } } }
+  /api/v1/movements/{id}/request-info:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Solicitar información, responses: { '200': { description: OK } } }
+  /api/v1/movements/{id}/void:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Anular con contramovimiento, responses: { '200': { description: Contramovimiento } } }
+  /api/v1/marchados/interpret:
+    post:
+      summary: Interpretar un mensaje ("Marchar 3 cervezas y 2 aguas")
+      requestBody: { content: { application/json: { schema: { type: object, properties: { text: { type: string } } } } } }
+      responses: { '200': { description: Interpretación, content: { application/json: { schema: { $ref: '#/components/schemas/Interpretation' } } } } }
+  /api/v1/marchados:
+    post: { summary: Crear movimientos propuestos desde una interpretación revisada, responses: { '201': { description: Creados } } }
+  /api/v1/counts:
+    post: { summary: Registrar conteo físico, responses: { '201': { description: Sesión de conteo } } }
+  /api/v1/suppliers:
+    get: { summary: Proveedores, responses: { '200': { description: Lista } } }
+    post: { summary: Crear proveedor, responses: { '201': { description: Creado } } }
+  /api/v1/purchases:
+    get: { summary: Compras, responses: { '200': { description: Lista } } }
+    post: { summary: Registrar entrada/compra con ítems, impuestos y descuentos, responses: { '201': { description: Creada } } }
+  /api/v1/purchases/{id}/approve:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Aprobar compra (actualiza inventario y costo promedio), responses: { '200': { description: Movimientos creados } } }
+  /api/v1/expenses:
+    get: { summary: Gastos, responses: { '200': { description: Lista } } }
+    post: { summary: Registrar gasto, responses: { '201': { description: Creado } } }
+  /api/v1/attachments:
+    post:
+      summary: Subir factura/foto/PDF (multipart, campo "file"); ?extract=true lee la factura con IA
+      responses: { '201': { description: '{ attachment, reused, extracted }' } }
+  /api/v1/whatsapp/inbox:
+    get: { summary: Bandeja "Movimientos detectados en WhatsApp", responses: { '200': { description: Lista } } }
+  /api/v1/whatsapp/inbox/{id}/status:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Cambiar estado (aprobado aplica los movimientos), responses: { '200': { description: OK } } }
+  /api/v1/whatsapp/chats:
+    get: { summary: Chats y grupos conocidos, responses: { '200': { description: Lista } } }
+  /api/v1/whatsapp/chats/{id}/authorize:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Autorizar o bloquear un chat o grupo (ADMIN), responses: { '200': { description: OK } } }
+  /api/v1/sheets/files:
+    get: { summary: Archivos de Drive compartidos con la cuenta de servicio, responses: { '200': { description: Lista } } }
+  /api/v1/sheets/files/{id}/tabs:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { summary: Hojas del archivo, responses: { '200': { description: Lista } } }
+  /api/v1/sheets/files/{id}/sample:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { summary: Encabezados y muestra para mapear columnas, responses: { '200': { description: '{ headers, rows }' } } }
+  /api/v1/sheets/sources:
+    get: { summary: Fuentes configuradas, responses: { '200': { description: Lista } } }
+    post: { summary: Configurar archivo + hoja + mapeo + cron, responses: { '201': { description: Creada } } }
+  /api/v1/sheets/sources/{id}/preview:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: '"ACTUALIZAR DATOS DESDE DRIVE": vista previa de filas nuevas/modificadas con cruces', responses: { '200': { description: '{ stats, preview }' } } }
+  /api/v1/sheets/apply:
+    post: { summary: Aplicar decisiones de la vista previa, responses: { '200': { description: Resultado } } }
+  /api/v1/sheets/rows:
+    get: { summary: Filas importadas (copia original para auditoría), responses: { '200': { description: Lista } } }
+  /api/v1/reconciliation/run:
+    post:
+      summary: Ejecutar conciliación
+      responses: { '200': { description: Resultado, content: { application/json: { schema: { type: object, properties: { rows: { type: array, items: { $ref: '#/components/schemas/ReconRow' } }, totals: { type: object } } } } } } }
+  /api/v1/reconciliation/runs:
+    get: { summary: Historial de conciliaciones, responses: { '200': { description: Lista } } }
+  /api/v1/sync-and-reconcile:
+    post: { summary: '"ACTUALIZAR Y CONCILIAR INFORMACIÓN": Drive + WhatsApp + conciliación', responses: { '200': { description: Resumen } } }
+  /api/v1/reports/export:
+    post: { summary: Exportar reporte a Google Sheets, responses: { '200': { description: '{ spreadsheetId, url }' } } }
+  /api/v1/audit:
+    get: { summary: Bitácora, responses: { '200': { description: Lista } } }
+  /api/v1/me/permissions:
+    get: { summary: Permisos del usuario actual, responses: { '200': { description: '{ role, perms[] }' } } }
+  /api/v1/me/home:
+    get: { summary: 'Mi turno (empleado): registros propios, pendientes, bajos en su área, solicitudes (sin costos)', responses: { '200': { description: OK } } }
+  /api/v1/purchase-requests:
+    get: { summary: Solicitudes de compra del personal, responses: { '200': { description: Lista } } }
+    post: { summary: Solicitar compra (empleado), responses: { '201': { description: Creada } } }
+  /api/v1/insights/reorder:
+    get: { summary: 'Plan de reposición: stock de seguridad, punto de reorden, cobertura, cantidad sugerida y órdenes por proveedor', responses: { '200': { description: '{ plan[], orders[] }' } } }
+  /api/v1/insights/signals:
+    get: { summary: 'Señales: comprar_ya, comprar_pronto, sobrestock, alza_precio, baja_precio, consumo_anomalo, riesgo_vencimiento, merma', responses: { '200': { description: Lista } } }
+  /api/v1/insights/summary:
+    post:
+      summary: Resumen inteligente con Claude (respaldo por reglas). period = day | week | month; question opcional
+      responses: { '200': { description: '{ summary: { titular, resumen, puntos_clave, alertas, recomendaciones, compras, preguntas_para_el_equipo, respuesta? } }' } }
+  /api/v1/insights/orders:
+    post: { summary: Crear orden de compra desde una sugerencia (opcional toAlegra), responses: { '201': { description: Creada } } }
+  /api/v1/alegra/status:
+    get: { summary: Estado de la conexión con Alegra y registro, responses: { '200': { description: OK } } }
+  /api/v1/alegra/sync:
+    post: { summary: 'Sincronizar proveedores, importar facturas de proveedor y (push=true) enviar compras', responses: { '200': { description: Resumen } } }
+  /api/v1/alegra/purchases/{id}/push:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Enviar compra aprobada a Alegra (POST /bills + POST /payments), responses: { '200': { description: OK } } }
+  /api/v1/alegra/items/links:
+    get: { summary: Sugerencias de vínculo ítem de Alegra ↔ producto, responses: { '200': { description: Lista } } }
+  /api/v1/alegra/webhooks/subscribe:
+    post: { summary: Suscribir webhooks new-bill, edit-bill, delete-bill, new-item, edit-item, responses: { '200': { description: OK } } }
+  /webhooks/alegra/{secret}:
+    parameters: [{ name: secret, in: path, required: true, schema: { type: string } }]
+    post: { summary: Notificaciones de Alegra, security: [], responses: { '200': { description: Recibido } } }
+  /api/v1/invoices:
+    get: { summary: 'Facturas de venta (?format=rows para la hoja)', responses: { '200': { description: Lista } } }
+    post: { summary: Crear factura de venta (borrador) con líneas, responses: { '201': { description: Creada } } }
+  /api/v1/invoices/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    put: { summary: Reemplazar un borrador con lo que tenga la hoja, responses: { '200': { description: OK } } }
+  /api/v1/invoices/{id}/issue:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Emitir (descuenta inventario como salida por venta), responses: { '200': { description: '{ invoice, warnings }' } } }
+  /api/v1/invoices/{id}/alegra:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { summary: Enviar factura de venta a Alegra (POST /invoices), responses: { '200': { description: OK } } }
+  /api/v1/users:
+    get: { summary: Usuarios (ADMIN), responses: { '200': { description: Lista } } }
+    post: { summary: Crear usuario, responses: { '201': { description: Creado } } }
+  /api/v1/users/activity:
+    get: { summary: Actividad por empleado, responses: { '200': { description: Lista } } }
+  /api/v1/roles:
+    get: { summary: Roles, permisos y matriz, responses: { '200': { description: OK } } }
+  /api/v1/roles/{role}:
+    parameters: [{ name: role, in: path, required: true, schema: { type: string, enum: [SUPERVISOR, EMPLEADO, AUDITOR] } }]
+    put: { summary: Cambiar permisos de un rol, responses: { '200': { description: OK } } }
+  /api/v1/products/import:
+    post:
+      summary: 'Importar productos desde Excel/CSV. multipart (file + payload JSON con mapping, options, sheet) o JSON { rows, mapping, options }. Sin apply devuelve la vista previa; apply = [filas] aplica.'
+      responses: { '200': { description: '{ plan } o { summary }' } }
+  /api/v1/products/export.xlsx:
+    get:
+      summary: Catálogo actual o plantilla (?template=1) en .xlsx con las columnas reimportables
+      responses: { '200': { description: Archivo xlsx } }
+  /api/v1/partners/summary:
+    get:
+      summary: 'Socios (solo lectura): ingresos por línea, resultado, margen, ocupación, ADR, RevPAB, ticket, impuestos, gastos; con periodo de comparación'
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses: { '200': { description: '{ current, previous }' } }
+  /api/v1/cash/today:
+    get: { summary: 'Caja del día por forma de pago (el cajero ve solo la suya)', responses: { '200': { description: OK } } }

@@ -1,0 +1,12 @@
+{
+  "name": "capybara-control",
+  "private": true,
+  "description": "Capybara Control: inventario, facturación, socios y conciliación para Capybara Hostel",
+  "scripts": {
+    "build": "node web/build.mjs",
+    "test": "cd api && npm test",
+    "dev:api": "cd api && npm run dev",
+    "dev:fake": "node web/build.mjs && node tools/fake-api.mjs",
+    "setup": "cd api && npm install && npx prisma migrate dev --name init && npm run db:seed"
+  }
+}

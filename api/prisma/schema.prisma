@@ -1,0 +1,447 @@
+// Capybara Control — modelo de datos (PostgreSQL)
+// Regla de oro: los movimientos NUNCA se eliminan. Se anulan o se ajustan.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  SUPERVISOR // se muestra como "Manager"
+  CAJERO
+  EMPLEADO
+  SOCIO      // solo lectura del módulo de socios
+  AUDITOR
+}
+
+enum MovementType {
+  entrada
+  devolucion
+  ajuste_pos
+  salida
+  marchado
+  consumo_interno
+  cortesia
+  danado
+  vencido
+  perdida
+  ajuste_neg
+}
+
+enum MovementStatus {
+  pendiente
+  aprobado
+  rechazado
+  anulado
+  duplicado
+  requiere_info
+}
+
+enum Source {
+  manual
+  whatsapp
+  whatsapp_foto
+  whatsapp_audio
+  factura
+  sheets
+  conteo
+  sistema
+  alegra
+}
+
+enum InboxStatus {
+  pendiente_analisis
+  pendiente_aprobacion
+  aprobado
+  rechazado
+  duplicado
+  procesado
+  requiere_info
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  phone        String?  @unique // número WhatsApp en formato E.164 sin "+"
+  passwordHash String
+  role         Role     @default(EMPLEADO)
+  area         String?  // Bar, Cocina, Recepción, Limpieza, Lavandería, Mantenimiento
+  areas        String[] // áreas adicionales que puede ver/contar
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  movements    Movement[] @relation("MovementUser")
+  approvals    Movement[] @relation("MovementApprover")
+  audit        AuditLog[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  products Product[]
+}
+
+model Supplier {
+  id        String     @id @default(cuid())
+  name      String
+  taxId     String?    @unique // NIT
+  phone     String?
+  email     String?
+  contact   String?
+  notes     String?
+  active    Boolean    @default(true)
+  leadDays  Float      @default(2)   // días que tarda en entregar (punto de reorden)
+  alegraId  String?    @unique       // id del contacto proveedor en Alegra (texto: numérico o UUID)
+  products  Product[]
+  purchases Purchase[]
+  expenses  Expense[]
+  prices    PriceHistory[]
+}
+
+model Product {
+  id            String    @id @default(cuid())
+  code          String    @unique          // código interno
+  barcode       String?   @unique
+  name          String
+  aliases       String[]                   // sinónimos para el intérprete ("pola", "cerveza")
+  description   String?
+  categoryId    String
+  category      Category  @relation(fields: [categoryId], references: [id])
+  kind          String    @default("consumible") // consumible | menaje | activo
+  unit          String    @default("unidad")
+  stockInit     Decimal   @default(0) @db.Decimal(14, 3)
+  stockCurrent  Decimal   @default(0) @db.Decimal(14, 3) // caché del inventario teórico
+  stockMin      Decimal   @default(0) @db.Decimal(14, 3)
+  stockMax      Decimal?  @db.Decimal(14, 3)
+  avgCost       Decimal   @default(0) @db.Decimal(14, 2)
+  lastPrice     Decimal?  @db.Decimal(14, 2)
+  supplierId    String?
+  supplier      Supplier? @relation(fields: [supplierId], references: [id])
+  location      String?
+  expiresAt     DateTime?
+  photoUrl      String?
+  salePrice     Decimal   @default(0) @db.Decimal(14, 2) // precio de venta al público
+  saleTaxPct    Decimal?  @db.Decimal(5, 2)              // 0, 8 (INC) o 19 (IVA); vacío = según categoría
+  packSize      Decimal   @default(1) @db.Decimal(10, 2) // empaque de compra (canasta de 24, caja de 12)
+  alegraItemId  String?   @unique
+  status        String    @default("activo") // activo | inactivo
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  movements     Movement[]
+  counts        PhysicalCount[]
+  prices        PriceHistory[]
+  @@index([categoryId])
+}
+
+model Movement {
+  id           String         @id @default(cuid())
+  ts           DateTime       @default(now())
+  productId    String
+  product      Product        @relation(fields: [productId], references: [id])
+  qty          Decimal        @db.Decimal(14, 3)
+  unit         String
+  type         MovementType
+  unitCost     Decimal?       @db.Decimal(14, 2)
+  userId       String?
+  user         User?          @relation("MovementUser", fields: [userId], references: [id])
+  reportedBy   String?        // nombre/teléfono de quien reportó (WhatsApp)
+  area         String?
+  reason       String?
+  source       Source
+  evidenceId   String?
+  evidence     Attachment?    @relation(fields: [evidenceId], references: [id])
+  status       MovementStatus @default(pendiente)
+  confidence   Float?
+  fingerprint  String
+  invoice      String?
+  purchaseId   String?
+  purchase     Purchase?      @relation(fields: [purchaseId], references: [id])
+  inboxItemId  String?
+  inboxItem    InboxItem?     @relation(fields: [inboxItemId], references: [id])
+  importRowId  String?
+  importRow    ImportRow?     @relation(fields: [importRowId], references: [id])
+  reversesId   String?        @unique   // anulación: apunta al movimiento que revierte
+  reverses     Movement?      @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy   Movement?      @relation("Reversal")
+  approvedById String?
+  approvedBy   User?          @relation("MovementApprover", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  @@index([productId, ts])
+  @@index([fingerprint])
+  @@index([status])
+}
+
+model PhysicalCount {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id])
+  qty       Decimal  @db.Decimal(14, 3)
+  ts        DateTime @default(now())
+  countedBy String
+  sessionId String?  // agrupa un conteo general
+  notes     String?
+}
+
+model Purchase {
+  id           String     @id @default(cuid())
+  supplierId   String
+  supplier     Supplier   @relation(fields: [supplierId], references: [id])
+  invoice      String?
+  purchasedAt  DateTime
+  receivedAt   DateTime
+  subtotal     Decimal    @db.Decimal(14, 2)
+  tax          Decimal    @default(0) @db.Decimal(14, 2)
+  discount     Decimal    @default(0) @db.Decimal(14, 2)
+  total        Decimal    @db.Decimal(14, 2)
+  payMethod    String     // efectivo | transferencia | tarjeta | crédito | nequi | daviplata
+  receivedBy   String
+  status       String     @default("borrador") // borrador | aprobada | anulada
+  kind         String     @default("compra")   // compra | orden (orden de compra sugerida, aún no recibida)
+  source       Source     @default(manual)
+  alegraBillId String?    @unique
+  alegraSyncedAt DateTime?
+  requestedBy  String?    // empleado que solicitó la compra
+  attachmentId String?
+  attachment   Attachment? @relation(fields: [attachmentId], references: [id])
+  notes        String?
+  items        PurchaseItem[]
+  movements    Movement[]
+  createdAt    DateTime   @default(now())
+  @@unique([supplierId, invoice, kind])
+}
+
+model PurchaseItem {
+  id         String   @id @default(cuid())
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  productId  String
+  qty        Decimal  @db.Decimal(14, 3)
+  unit       String
+  unitCost   Decimal  @db.Decimal(14, 2)
+  subtotal   Decimal  @db.Decimal(14, 2)
+}
+
+model PriceHistory {
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+  price      Decimal  @db.Decimal(14, 2)
+  ts         DateTime @default(now())
+}
+
+model Expense {
+  id           String    @id @default(cuid())
+  date         DateTime
+  category     String    // servicios, nómina, mantenimiento, transporte...
+  description  String
+  amount       Decimal   @db.Decimal(14, 2)
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id])
+  payMethod    String
+  source       Source    @default(manual)
+  status       String    @default("registrado") // registrado | pendiente_revision | anulado
+  attachmentId String?
+  attachment   Attachment? @relation(fields: [attachmentId], references: [id])
+  fingerprint  String?
+  createdAt    DateTime  @default(now())
+}
+
+model Attachment {
+  id        String   @id @default(cuid())
+  kind      String   // foto | factura | recibo | audio | pdf | captura
+  mime      String
+  url       String   // ruta en almacenamiento (S3, GCS o disco)
+  sha256    String   @unique // evita subir dos veces el mismo archivo
+  extracted Json?    // datos extraídos por OCR / IA
+  createdAt DateTime @default(now())
+  movements Movement[]
+  purchases Purchase[]
+  expenses  Expense[]
+  inbox     InboxItem[]
+}
+
+// ---------- WhatsApp ----------
+model WhatsAppChat {
+  id         String   @id // wa_id del chat o del grupo
+  name       String
+  authorized Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  items      InboxItem[]
+}
+
+model InboxItem {
+  id           String      @id @default(cuid())
+  waMessageId  String      @unique  // idempotencia del webhook
+  chatId       String
+  chat         WhatsAppChat @relation(fields: [chatId], references: [id])
+  from         String
+  fromName     String?
+  ts           DateTime
+  msgType      String      // text | image | audio | document
+  text         String?
+  transcript   String?
+  attachmentId String?
+  attachment   Attachment? @relation(fields: [attachmentId], references: [id])
+  analysis     Json?       // salida del intérprete / IA
+  confidence   Float?
+  status       InboxStatus @default(pendiente_analisis)
+  reviewNote   String?
+  raw          Json        // payload original para auditoría
+  movements    Movement[]
+  createdAt    DateTime    @default(now())
+  @@index([status])
+}
+
+// ---------- Google Drive / Sheets ----------
+model SheetSource {
+  id           String   @id @default(cuid())
+  name         String
+  spreadsheetId String
+  sheetName    String
+  kind         String   // productos | entradas | salidas | compras | gastos | conteos
+  headerRow    Int      @default(1)
+  mapping      Json     // { "Fecha": "ts", "Producto": "product", "Cantidad": "qty", ... }
+  keyColumns   String[] // columnas que identifican una fila
+  cron         String?  // sincronización automática, p. ej. "*/30 * * * *"
+  lastSyncAt   DateTime?
+  active       Boolean  @default(true)
+  rows         ImportRow[]
+  runs         SyncRun[]
+}
+
+model ImportRow {
+  id          String   @id @default(cuid())
+  sourceId    String
+  source      SheetSource @relation(fields: [sourceId], references: [id])
+  rowKey      String   // hash de las columnas clave
+  rowNumber   Int
+  contentHash String   // detecta filas modificadas
+  raw         Json     // copia literal de la fila importada (auditoría)
+  mapped      Json?
+  status      String   @default("nuevo") // nuevo | modificado | aplicado | error | duplicado | ignorado
+  error       String?
+  importedAt  DateTime @default(now())
+  movements   Movement[]
+  @@unique([sourceId, rowKey])
+}
+
+model SyncRun {
+  id         String   @id @default(cuid())
+  sourceId   String
+  source     SheetSource @relation(fields: [sourceId], references: [id])
+  startedAt  DateTime @default(now())
+  finishedAt DateTime?
+  trigger    String   // manual | cron | conciliar
+  stats      Json?
+  error      String?
+}
+
+// ---------- Conciliación y bitácora ----------
+model ReconciliationRun {
+  id        String   @id @default(cuid())
+  ts        DateTime @default(now())
+  byUserId  String?
+  totals    Json
+  rows      Json
+}
+
+model AuditLog {
+  id      String   @id @default(cuid())
+  ts      DateTime @default(now())
+  userId  String?
+  user    User?    @relation(fields: [userId], references: [id])
+  action  String   // movement.approve, purchase.approve, sheets.sync ...
+  entity  String
+  entityId String?
+  before  Json?
+  after   Json?
+  ip      String?
+}
+
+// ---------- Inteligencia, Alegra y control de acceso ----------
+model InsightReport {
+  id          String   @id @default(cuid())
+  ts          DateTime @default(now())
+  period      String   // day | week | month
+  question    String?
+  generatedBy String   // modelo de IA o "reglas"
+  summary     Json
+  digest      Json
+  error       String?
+}
+
+model AlegraSyncLog {
+  id     String   @id @default(cuid())
+  ts     DateTime @default(now())
+  action String
+  status String   // ok | error
+  detail String
+  ref    String?
+}
+
+model RolePermission {
+  role  Role     @id
+  perms String[]
+  updatedAt DateTime @updatedAt
+}
+
+model PurchaseRequest {
+  id          String   @id @default(cuid())
+  ts          DateTime @default(now())
+  productId   String
+  qty         Decimal  @db.Decimal(14, 3)
+  reason      String?
+  requestedBy String
+  area        String?
+  status      String   @default("abierta") // abierta | en_orden | atendida | rechazada
+  purchaseId  String?
+}
+
+// ---------- Facturación de ventas (hoja tipo Google Sheets) ----------
+model SalesInvoice {
+  id              String   @id @default(cuid())
+  number          String   @unique            // FV-0001
+  date            DateTime
+  customerName    String
+  customerDoc     String?                     // cédula / pasaporte / NIT
+  room            String?                     // habitación o punto de venta (Bar)
+  payMethod       String
+  status          String   @default("borrador") // borrador | emitida | anulada
+  subtotal        Decimal  @db.Decimal(14, 2) @default(0)
+  tax             Decimal  @db.Decimal(14, 2) @default(0)
+  total           Decimal  @db.Decimal(14, 2) @default(0)
+  createdBy       String
+  issuedBy        String?
+  issuedAt        DateTime?
+  alegraInvoiceId String?  @unique
+  notes           String?
+  lines           SalesInvoiceLine[]
+  createdAt       DateTime @default(now())
+}
+
+model SalesInvoiceLine {
+  id        String       @id @default(cuid())
+  invoiceId String
+  invoice   SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  position  Int
+  productId String
+  qty       Decimal      @db.Decimal(14, 3)
+  price     Decimal      @db.Decimal(14, 2)
+  taxPct    Decimal      @db.Decimal(5, 2)
+  movementId String?
+}
+
+model Sequence {
+  key   String @id   // "FV"
+  value Int    @default(0)
+}
