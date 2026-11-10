@@ -272,6 +272,7 @@ remote.load = async () => {
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;
   S.alegra ||= null; S.imports ||= [];
+  if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor
 };
 const _newInvoice = newInvoice;
 newInvoice = function () { _newInvoice(); if (S.settings.mode === 'api') { const l = S.billing.lines[S.billing.lines.length - 1]; l.localDraft = true; l.inv = 'BORRADOR-' + Date.now().toString(36).toUpperCase().slice(-4); save(); render(); } };

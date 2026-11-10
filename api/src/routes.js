@@ -192,10 +192,10 @@ r.post('/counts', validate(z.object({ items: z.array(z.object({ productId: z.str
 }));
 
 /* ============ Proveedores ============ */
-const supplierSchema = z.object({ name: z.string().min(2), taxId: z.string().optional().nullable(), phone: z.string().optional().nullable(), email: z.string().email().optional().nullable(), contact: z.string().optional().nullable(), notes: z.string().optional().nullable() });
+const supplierSchema = z.object({ name: z.string().min(2), taxId: z.string().optional().nullable(), phone: z.string().optional().nullable(), email: z.string().email().optional().nullable(), contact: z.string().optional().nullable(), notes: z.string().optional().nullable(), alegraId: z.string().max(40).optional().nullable() });
 r.get('/suppliers', asyncH(async (_q, res) => res.json(await prisma.supplier.findMany({ where: { active: true }, orderBy: { name: 'asc' } }))));
-r.post('/suppliers', validate(supplierSchema), asyncH(async (req, res) => res.status(201).json(await prisma.supplier.create({ data: req.body }))));
-r.patch('/suppliers/:id', validate(supplierSchema.partial()), asyncH(async (req, res) => res.json(await prisma.supplier.update({ where: { id: req.params.id }, data: req.body }))));
+r.post('/suppliers', perm('proveedores.gestionar'), validate(supplierSchema), asyncH(async (req, res) => res.status(201).json(await prisma.supplier.create({ data: req.body }))));
+r.patch('/suppliers/:id', perm(['proveedores.gestionar', 'alegra.gestionar']), validate(supplierSchema.partial()), asyncH(async (req, res) => res.json(await prisma.supplier.update({ where: { id: req.params.id }, data: req.body }))));
 
 /* ============ Compras / entradas ============ */
 const purchaseSchema = z.object({

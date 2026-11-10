@@ -363,9 +363,16 @@ BIND.alegra = (el) => {
   $$('[data-altab]', el).forEach((b) => (b.onclick = () => { AL.tab = b.dataset.altab; render(); }));
   $$('[data-ai]', el).forEach((b) => (b.onclick = () => alegraImport(b.dataset.ai)));
   $$('[data-openpu]', el).forEach((a) => (a.onclick = () => { const p = S.purchases.find((x) => x.id === a.dataset.openpu); if (p) PU = { ...JSON.parse(JSON.stringify(p)), taxPct: p.subtotal ? Math.round((p.tax / p.subtotal) * 100) : 0 }; }));
-  $$('[data-ap]', el).forEach((b) => (b.onclick = () => { alegraPush(b.dataset.ap); save(); render(); toast('Compra enviada a Alegra (simulado)'); }));
-  $('#al-pushall', el)?.addEventListener('click', () => { const ps = S.purchases.filter((p) => p.status === 'aprobada' && !p.alegraBillId && p.source !== 'alegra' && p.kind !== 'orden'); let ok = 0; for (const p of ps) if (S.alegra.supplierLinks[p.supplierId]) { alegraPush(p.id); ok++; } save(); render(); toast(`${ok} compras enviadas · ${ps.length - ok} con proveedor sin vincular`); });
-  $$('[data-sl]', el).forEach((i) => (i.onchange = () => { S.alegra.supplierLinks[i.dataset.sl] = i.value.trim(); save(); toast('Vínculo guardado'); }));
+  $$('[data-ap]', el).forEach((b) => (b.onclick = async () => {
+    if (S.settings.mode === 'api') { b.disabled = true; try { const r = await remote.req(`/api/v1/alegra/purchases/${b.dataset.ap}/push`, { method: 'POST', body: {} }); await remote.load(); save(); render(); toast(`Compra enviada a Alegra (factura de proveedor ${r.alegraBillId}).`); } catch (e) { b.disabled = false; toast('No se envió a Alegra: ' + e.message); } return; }
+    alegraPush(b.dataset.ap); save(); render(); toast('Compra enviada a Alegra (simulado)');
+  }));
+  $('#al-pushall', el)?.addEventListener('click', async (ev) => {
+    if (S.settings.mode === 'api') { ev.target.disabled = true; try { const r = await remote.req('/api/v1/alegra/push-pending', { method: 'POST' }); await remote.load(); save(); render(); const list = Array.isArray(r) ? r : []; const ok = list.filter((x) => !x.error).length; const bad = list.filter((x) => x.error); toast(`${ok} compras enviadas a Alegra${bad.length ? ` · ${bad.length} con error: ${bad[0].error}` : ''}.`); } catch (e) { ev.target.disabled = false; toast('No se envió a Alegra: ' + e.message); } return; } const ps = S.purchases.filter((p) => p.status === 'aprobada' && !p.alegraBillId && p.source !== 'alegra' && p.kind !== 'orden'); let ok = 0; for (const p of ps) if (S.alegra.supplierLinks[p.supplierId]) { alegraPush(p.id); ok++; } save(); render(); toast(`${ok} compras enviadas · ${ps.length - ok} con proveedor sin vincular`); });
+  $$('[data-sl]', el).forEach((i) => (i.onchange = () => {
+    if (S.settings.mode === 'api') { remote.req(`/api/v1/suppliers/${i.dataset.sl}`, { method: 'PATCH', body: { alegraId: i.value.trim() || null } }).then(async () => { await remote.load(); render(); toast('Vínculo guardado'); }).catch((e) => toast('No se guardó el vínculo: ' + e.message)); return; }
+    S.alegra.supplierLinks[i.dataset.sl] = i.value.trim(); save(); toast('Vínculo guardado');
+  }));
   $$('[data-il]', el).forEach((s) => (s.onchange = () => { for (const [k, v] of Object.entries(S.alegra.itemLinks)) if (v === s.dataset.il) delete S.alegra.itemLinks[k]; if (s.value) S.alegra.itemLinks[s.value] = s.dataset.il; save(); render(); }));
   $$('[data-ils]', el).forEach((b) => (b.onclick = () => { S.alegra.itemLinks[b.dataset.p] = b.dataset.ils; save(); render(); toast('Ítem vinculado'); }));
   if ($('#al-sync', el)) $('#al-sync', el).onclick = async () => {
@@ -406,7 +413,8 @@ function userForm(u = null) {
     <div class="grid g2"><div class="field"><label for="uf-name">Nombre</label><input class="in" id="uf-name" value="${esc(u.name)}"></div><div class="field"><label for="uf-email">Correo (inicio de sesión)</label><input class="in" id="uf-email" type="email" value="${esc(u.email || '')}"></div></div>
     <div class="grid g3"><div class="field"><label for="uf-role">Rol</label><select class="in" id="uf-role">${Object.entries(ROLES).map(([k, l]) => opt(k, l, u.role)).join('')}</select></div><div class="field"><label for="uf-area">Área principal</label><select class="in" id="uf-area">${['Administración', ...AREAS].map((a) => opt(a, a, u.area)).join('')}</select></div><div class="field"><label for="uf-phone">WhatsApp (57…)</label><input class="in mono" id="uf-phone" value="${esc(u.phone || '')}" placeholder="573001112233"></div></div>
     <div class="field"><label>Áreas adicionales</label><div class="row">${AREAS.map((a) => `<label class="small row" style="gap:4px"><input type="checkbox" data-ua="${a}" ${(u.areas || []).includes(a) ? 'checked' : ''}>${a}</label>`).join('')}</div></div>
-    ${!isNew ? `<label class="row small"><input type="checkbox" id="uf-active" ${u.active ? 'checked' : ''}> Usuario activo</label>` : '<p class="muted small" style="margin:0">Con el backend conectado se envía una contraseña temporal por correo. Su número de WhatsApp queda autorizado para reportar.</p>'}`,
+    ${S.settings.mode === 'api' ? `<div class="field"><label for="uf-pw">${isNew ? 'Contraseña inicial (mínimo 8 caracteres)' : 'Nueva contraseña (déjala vacía para no cambiarla)'}</label><input class="in" id="uf-pw" type="password" autocomplete="new-password"></div>` : ''}
+    ${!isNew ? `<label class="row small"><input type="checkbox" id="uf-active" ${u.active ? 'checked' : ''}> Usuario activo</label>` : `<p class="muted small" style="margin:0">${S.settings.mode === 'api' ? 'Entrégale la contraseña en persona; podrá cambiarla con un administrador.' : 'Con el backend conectado se le asigna una contraseña.'} Su número de WhatsApp queda autorizado para reportar.</p>`}`,
     foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="uf-ok">${ic('check')} Guardar</button>` });
   m.querySelector('#uf-ok').onclick = () => {
     const g = (k) => m.querySelector('#uf-' + k).value.trim();
@@ -415,6 +423,16 @@ function userForm(u = null) {
     const isMe = u.name === me().name;
     const o = { ...u, name: g('name'), email: g('email'), role: g('role'), area: g('area'), phone: g('phone'), areas: $$('[data-ua]', m).filter((x) => x.checked).map((x) => x.dataset.ua), active: isNew ? true : m.querySelector('#uf-active').checked };
     if (isMe && (o.role !== 'ADMIN' || !o.active)) return toast('No puedes quitarte el rol de administrador ni desactivarte.');
+    if (S.settings.mode === 'api') {
+      const pw = m.querySelector('#uf-pw')?.value || '';
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.email)) return toast('Escribe un correo válido: es con el que inicia sesión.');
+      if ((isNew || pw) && pw.length < 8) return toast('La contraseña debe tener al menos 8 caracteres.');
+      const body = { name: o.name, email: o.email, role: o.role, area: o.area || null, areas: o.areas, phone: o.phone || null, active: o.active, ...(pw ? { password: pw } : {}) };
+      (isNew ? remote.req('/api/v1/users', { method: 'POST', body }) : remote.req(`/api/v1/users/${u.id}`, { method: 'PATCH', body }))
+        .then(async () => { if (isMe) S.settings.user = o.name; closeModal(); await remote.load(); save(); render(); toast('Usuario guardado'); })
+        .catch((e) => toast('No se guardó el usuario: ' + e.message));
+      return;
+    }
     if (isNew) { o.id = uid('u'); S.users.push(o); } else { const i = S.users.findIndex((x) => x.id === u.id); if (isMe) S.settings.user = o.name; S.users[i] = o; }
     log(isNew ? 'usuario.crear' : 'usuario.editar', `${o.name} · ${ROLES[o.role]}`); closeModal(); save(); render(); toast('Usuario guardado');
   };
@@ -423,7 +441,7 @@ BIND.acceso = (el) => {
   $('#ac-new', el).onclick = () => userForm();
   $$('[data-ue]', el).forEach((b) => (b.onclick = () => userForm(S.users.find((u) => u.id === b.dataset.ue))));
   $$('[data-uv]', el).forEach((b) => (b.onclick = () => { S.settings.user = S.users.find((u) => u.id === b.dataset.uv).name; save(); toast(`Viendo como ${me().name}. Cambia de usuario en el menú lateral.`); location.hash = homeView(); render(); }));
-  $$('[data-pm]', el).forEach((c) => (c.onchange = () => { const [r, k] = c.dataset.pm.split('|'); const set = new Set(S.rolePerms[r] || []); c.checked ? set.add(k) : set.delete(k); S.rolePerms[r] = [...set]; log('rol.permisos', `${ROLES[r]}: ${c.checked ? '+' : '−'} ${k}`); save(); renderNav(); }));
+  $$('[data-pm]', el).forEach((c) => (c.onchange = () => { const [r, k] = c.dataset.pm.split('|'); const set = new Set(S.rolePerms[r] || []); c.checked ? set.add(k) : set.delete(k); S.rolePerms[r] = [...set]; if (S.settings.mode === 'api') remote.req(`/api/v1/roles/${r}`, { method: 'PUT', body: { perms: S.rolePerms[r] } }).then(() => toast(`Permisos de ${ROLES[r]} guardados`)).catch((e) => { toast('No se guardaron los permisos: ' + e.message); remote.load().then(render); }); log('rol.permisos', `${ROLES[r]}: ${c.checked ? '+' : '−'} ${k}`); save(); renderNav(); }));
   $('#ac-reset', el).onclick = () => { S.rolePerms = JSON.parse(JSON.stringify(DEFAULT_ROLE_PERMS)); log('rol.permisos', 'Restablecidos'); save(); render(); toast('Permisos restablecidos'); };
 };
 

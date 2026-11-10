@@ -17,7 +17,7 @@ import { prisma, n } from '../db.js';
 import { matchProduct } from '../core/core.js';
 import { toCoreProduct } from '../db.js';
 
-const BASE = 'https://api.alegra.com/api/v1';
+const BASE = config.alegra.baseUrl;
 const PAY_MAP = { Efectivo: 'cash', Transferencia: 'transfer', Nequi: 'transfer', Daviplata: 'transfer', Tarjeta: 'debit-card', 'Tarjeta crédito': 'credit-card', Cheque: 'check' };
 
 let remaining = 150, resetAt = 0;

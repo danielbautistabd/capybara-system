@@ -32,6 +32,7 @@ export const config = {
     openaiKey: process.env.OPENAI_API_KEY,
   },
   alegra: {
+    baseUrl: (process.env.ALEGRA_BASE_URL || 'https://api.alegra.com/api/v1').replace(/\/$/, ''), // otra URL solo para pruebas
     email: process.env.ALEGRA_EMAIL,
     token: process.env.ALEGRA_TOKEN,
     defaultCategoryId: process.env.ALEGRA_DEFAULT_CATEGORY_ID, // cuenta contable para productos sin ítem en Alegra

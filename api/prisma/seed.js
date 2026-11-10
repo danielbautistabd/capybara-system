@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { CATEGORIES, SUPPLIERS, PRODUCTS } from './seed-data.js';

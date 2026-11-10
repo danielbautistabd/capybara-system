@@ -125,6 +125,7 @@ RENDER.facturacion = () => {
       ${inv ? `<span class="small">Factura <b class="mono">${esc(inv)}</b> · ${esc(row.customer || '')} · <b class="num">${money(invTot)}</b></span>
         ${invStatus(inv) === 'borrador' && can('facturacion.emitir') ? `<button class="btn sm pri" id="gs-emit">${ic('check')} Emitir ${esc(inv)}</button>` : ''}
         ${invStatus(inv) === 'emitida' && !S.billing.status[inv]?.alegra && (can('alegra.gestionar') || can('alegra.enviar')) ? `<button class="btn sm" id="gs-alegra">Enviar a Alegra</button>` : ''}
+        ${S.settings.mode === 'api' && invStatus(inv) === 'emitida' && can('facturacion.emitir') ? `<button class="btn sm bad" id="gs-void">Anular</button>` : ''}
         ${invStatus(inv) === 'borrador' && !can('facturacion.emitir') ? pill('Un supervisor la emite', 'p-info') : ''}` : ''}
     </div>
     <div class="gs-fx"><span class="gs-ref mono">${ref}</span><span class="gs-fxi">fx</span><span class="gs-fxv mono" id="gs-fxv">${esc(String(fx))}</span></div>
@@ -226,7 +227,20 @@ BIND.facturacion = (el) => {
   $('#gs-addp', el)?.addEventListener('click', () => { const prev = S.billing.draftPurchases[0]; S.billing.draftPurchases.unshift({ id: uid('dp'), date: iso(Date.now()), supplierId: prev?.supplierId || '', inv: prev?.inv || '', productId: '', qty: 1, price: 0, taxPct: 0, pay: prev?.pay || 'Transferencia' }); SH.r = 0; SH.c = prev ? 3 : 1; SH.edit = false; save(); render(); });
   $('#gs-delrow', el)?.addEventListener('click', () => { const row = d.rows[SH.r]; const arr = SH.tab === 'ventas' ? S.billing.lines : S.billing.draftPurchases; arr.splice(arr.indexOf(row), 1); SH.r = Math.max(0, SH.r - 1); save(); render(); });
   $('#gs-emit', el)?.addEventListener('click', () => emitInvoice(d.rows[SH.r].inv));
-  $('#gs-alegra', el)?.addEventListener('click', () => { const inv = d.rows[SH.r].inv; S.billing.status[inv].alegra = String(9000 + Object.keys(S.billing.status).length); S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'venta.exportar', status: 'ok', detail: `${inv} → factura de venta ${S.billing.status[inv].alegra} (simulado)` }); log('alegra.venta', inv); save(); render(); toast(`${inv} enviada a Alegra (simulado)`); });
+  $('#gs-void', el)?.addEventListener('click', async () => {
+    const inv = d.rows[SH.r].inv, id = S.billing.status[inv]?.invoiceId;
+    const reason = await ask({ title: `Anular ${inv}`, text: 'La factura queda anulada en Capybara. Si ya estaba en Alegra, anúlala también allá.', input: 'Motivo (obligatorio)', label: 'Anular factura', danger: true });
+    if (!reason) return;
+    if (reason.length < 3) return toast('Escribe un motivo de al menos 3 letras.');
+    try { const r = await remote.req(`/api/v1/invoices/${id}/void`, { method: 'POST', body: { reason } }); await remote.load(); save(); render(); toast(`${inv} anulada. ${r.note || ''}`); } catch (e) { toast('No se pudo anular: ' + e.message); }
+  });
+  $('#gs-alegra', el)?.addEventListener('click', async (ev) => { const inv = d.rows[SH.r].inv;
+    if (S.settings.mode === 'api') {
+      ev.target.disabled = true;
+      try { const r = await remote.req(`/api/v1/invoices/${S.billing.status[inv]?.invoiceId}/alegra`, { method: 'POST' }); await remote.load(); save(); render(); toast(`${inv} enviada a Alegra (factura ${r.alegraInvoiceId}).`); }
+      catch (e) { ev.target.disabled = false; toast('No se envió a Alegra: ' + e.message); }
+      return;
+    } S.billing.status[inv].alegra = String(9000 + Object.keys(S.billing.status).length); S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'venta.exportar', status: 'ok', detail: `${inv} → factura de venta ${S.billing.status[inv].alegra} (simulado)` }); log('alegra.venta', inv); save(); render(); toast(`${inv} enviada a Alegra (simulado)`); });
   $('#gs-mkp', el)?.addEventListener('click', () => {
     const groups = {}; const bad = [];
     for (const l of S.billing.draftPurchases) { if (!l.supplierId || !l.productId || !(l.qty > 0)) { bad.push(l); continue; } (groups[l.supplierId + '|' + (l.inv || '')] ||= []).push(l); }

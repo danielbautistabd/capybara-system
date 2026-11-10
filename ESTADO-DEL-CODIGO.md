@@ -12,7 +12,8 @@ Fecha de corte: 9 de noviembre de 2026.
 | Frontend en modo API | Navegador contra `tools/fake-api.mjs`: inicio de sesión, cajero emite factura, socio ve ingresos | Funciona |
 | Rutas del backend | Arranque del servidor con Prisma simulado; permisos por rol (403/200) | Responden |
 | Esquema de base de datos | Validador oficial de Prisma | Válido |
-| Backend contra PostgreSQL real | **No probado** (el entorno donde se construyó no podía descargar los motores de Prisma) | Pendiente |
+| Backend contra PostgreSQL real | PostgreSQL 16 local: esquema, semilla, inicio de sesión y navegador automatizado (cajero crea, emite, envía a Alegra y anula) | Funciona (10 nov 2026) |
+| Alegra | Contra un Alegra simulado (`ALEGRA_BASE_URL`): factura de venta, factura de proveedor y pago | Funciona; falta probar con la cuenta real |
 | Integraciones reales (WhatsApp, Google, Alegra, Claude) | **No probadas** con credenciales reales | Pendiente |
 
 ## Arquitectura
@@ -56,15 +57,16 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Marchados, aprobar/rechazar/anular | Sí | |
 | Importar Excel | Sí | `POST /products/import` |
 | Facturación: emitir | Sí | Los borradores viven en el navegador hasta emitir; al emitir se crea y emite en el servidor |
+| Facturación: enviar a Alegra y anular | Sí | `POST /invoices/:id/alegra` y `POST /invoices/:id/void`. Anular no devuelve el inventario solo |
 | Socios | Sí | Calcula con las facturas emitidas y los gastos que trae la API |
 | Caja del día | Sí | Con las facturas cargadas. También existe `GET /cash/today` |
-| Control de acceso: lista de usuarios | Lectura | Crear/editar usuarios en la interfaz todavía es local. Usa `POST/PATCH /users` |
+| Control de acceso | Sí | Crear y editar usuarios con contraseña (`POST/PATCH /users`) y guardar la matriz de permisos (`PUT /roles/:role`) |
 | Conteos físicos | Sí | `POST /counts` |
 | Conciliación | Parcial | La interfaz concilia con lo cargado; el botón principal llama a `POST /sync-and-reconcile` |
 | Inteligencia | Parcial | Resumen IA por API; plan de reposición calculado en el navegador con los datos cargados |
 | WhatsApp | Parcial | La bandeja se lee de la API; las acciones de estado van a la API. El simulador es solo demo |
 | Drive / Sheets | Parcial | Vista previa y aplicar por API. La configuración de archivo/mapeo en la interfaz es local |
-| Alegra | Parcial | "Sincronizar ahora" llama a la API; la lista de facturas y vínculos en la interfaz es de ejemplo |
+| Alegra | Parcial | Enviar compras (una o todas) y vincular proveedores van por API. La lista de facturas de proveedor y el vínculo de ítems en la interfaz siguen siendo de ejemplo |
 | Solicitudes de compra, órdenes sugeridas | Local | Existen `POST /purchase-requests` y `POST /insights/orders`; falta conectarlos en la interfaz |
 
 ## Siguientes pasos recomendados

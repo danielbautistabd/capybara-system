@@ -115,7 +115,7 @@ r.post('/alegra/providers/sync', perm('alegra.gestionar'), asyncH(async (req, re
 r.post('/alegra/webhooks/subscribe', perm('integraciones.configurar'), asyncH(async (_q, res) => res.json(await alegra.subscribeWebhooks())));
 
 /* ---------- Usuarios y permisos (solo ADMIN) ---------- */
-const userSchema = z.object({ name: z.string().min(2), email: z.string().email(), phone: z.string().regex(/^\d{10,15}$/).optional().nullable(), role: z.enum(['ADMIN', 'SUPERVISOR', 'EMPLEADO', 'AUDITOR']), area: z.string().optional().nullable(), areas: z.array(z.string()).default([]), active: z.boolean().default(true), password: z.string().min(8).optional() });
+const userSchema = z.object({ name: z.string().min(2), email: z.string().email(), phone: z.string().regex(/^\d{10,15}$/).optional().nullable(), role: z.enum(Object.keys(ROLES)), area: z.string().optional().nullable(), areas: z.array(z.string()).default([]), active: z.boolean().default(true), password: z.string().min(8).optional() });
 r.get('/users', perm('usuarios.gestionar'), asyncH(async (_q, res) => res.json(await prisma.user.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, email: true, phone: true, role: true, area: true, areas: true, active: true, createdAt: true } }))));
 r.post('/users', perm('usuarios.gestionar'), validate(userSchema.required({ password: true })), asyncH(async (req, res) => {
   const { password, ...data } = req.body;
