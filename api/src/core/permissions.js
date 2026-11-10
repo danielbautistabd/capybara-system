@@ -1,6 +1,7 @@
 /* Roles y permisos de Capybara Control (backend + frontend).
  * ADMIN: todo. SUPERVISOR: opera y aprueba, sin configuración ni usuarios.
  * EMPLEADO: registra (queda pendiente), cuenta y consulta su área, sin costos ni dinero.
+ * CAJERO: ingresa productos (entradas en borrador), factura, ve inventario y caja, envía a Alegra; sin tablero ni indicadores.
  * AUDITOR: solo lectura de todo, incluida la bitácora. */
 
 export const ROLES = {
@@ -25,6 +26,7 @@ export const PERMISSIONS = {
   'whatsapp.revisar': 'Revisar la bandeja de WhatsApp',
   'sheets.sincronizar': 'Sincronizar Google Drive y Sheets',
   'alegra.gestionar': 'Sincronizar y configurar Alegra',
+  'alegra.enviar': 'Enviar facturas y compras aprobadas a Alegra (sin configurar)',
   'conciliacion.ver': 'Ver y ejecutar la conciliación',
   'inteligencia.ver': 'Resúmenes con IA, punto de reorden y señales de compra',
   'proveedores.gestionar': 'Gestionar proveedores',
@@ -42,7 +44,8 @@ export const PERMISSIONS = {
 export const DEFAULT_ROLE_PERMS = {
   ADMIN: Object.keys(PERMISSIONS),
   SUPERVISOR: ['tablero.ver', 'costos.ver', 'inventario.ver', 'inventario.editar', 'movimientos.crear', 'movimientos.aprobar', 'entradas.crear', 'entradas.aprobar', 'conteos.crear', 'whatsapp.revisar', 'sheets.sincronizar', 'conciliacion.ver', 'inteligencia.ver', 'proveedores.gestionar', 'gastos.gestionar', 'bitacora.ver', 'solicitudes.crear', 'facturacion.crear', 'facturacion.emitir', 'caja.ver'],
-  CAJERO: ['inventario.ver', 'movimientos.crear', 'facturacion.crear', 'facturacion.emitir', 'caja.ver', 'solicitudes.crear'],
+  // Cajero: ingresa productos (entradas en borrador), factura, verifica inventario y caja, y envía a Alegra. Sin indicadores ni costos.
+  CAJERO: ['inventario.ver', 'entradas.crear', 'facturacion.crear', 'facturacion.emitir', 'caja.ver', 'alegra.enviar'],
   EMPLEADO: ['inventario.ver', 'movimientos.crear', 'entradas.crear', 'conteos.crear', 'solicitudes.crear', 'facturacion.crear'],
   SOCIO: ['socios.ver'],
   AUDITOR: ['tablero.ver', 'costos.ver', 'inventario.ver', 'conciliacion.ver', 'inteligencia.ver', 'bitacora.ver'],

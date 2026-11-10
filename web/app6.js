@@ -124,7 +124,7 @@ RENDER.facturacion = () => {
       <span class="spacer"></span>
       ${inv ? `<span class="small">Factura <b class="mono">${esc(inv)}</b> · ${esc(row.customer || '')} · <b class="num">${money(invTot)}</b></span>
         ${invStatus(inv) === 'borrador' && can('facturacion.emitir') ? `<button class="btn sm pri" id="gs-emit">${ic('check')} Emitir ${esc(inv)}</button>` : ''}
-        ${invStatus(inv) === 'emitida' && !S.billing.status[inv]?.alegra && can('alegra.gestionar') ? `<button class="btn sm" id="gs-alegra">Enviar a Alegra</button>` : ''}
+        ${invStatus(inv) === 'emitida' && !S.billing.status[inv]?.alegra && (can('alegra.gestionar') || can('alegra.enviar')) ? `<button class="btn sm" id="gs-alegra">Enviar a Alegra</button>` : ''}
         ${invStatus(inv) === 'borrador' && !can('facturacion.emitir') ? pill('Un supervisor la emite', 'p-info') : ''}` : ''}
     </div>
     <div class="gs-fx"><span class="gs-ref mono">${ref}</span><span class="gs-fxi">fx</span><span class="gs-fxv mono" id="gs-fxv">${esc(String(fx))}</span></div>

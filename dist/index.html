@@ -1125,6 +1125,7 @@ function round(v, d = 0) { const k = 10 ** d; return Math.round(v * k) / k; }
 /* Roles y permisos de Capybara Control (backend + frontend).
  * ADMIN: todo. SUPERVISOR: opera y aprueba, sin configuración ni usuarios.
  * EMPLEADO: registra (queda pendiente), cuenta y consulta su área, sin costos ni dinero.
+ * CAJERO: ingresa productos (entradas en borrador), factura, ve inventario y caja, envía a Alegra; sin tablero ni indicadores.
  * AUDITOR: solo lectura de todo, incluida la bitácora. */
 
 const ROLES = {
@@ -1149,6 +1150,7 @@ const PERMISSIONS = {
   'whatsapp.revisar': 'Revisar la bandeja de WhatsApp',
   'sheets.sincronizar': 'Sincronizar Google Drive y Sheets',
   'alegra.gestionar': 'Sincronizar y configurar Alegra',
+  'alegra.enviar': 'Enviar facturas y compras aprobadas a Alegra (sin configurar)',
   'conciliacion.ver': 'Ver y ejecutar la conciliación',
   'inteligencia.ver': 'Resúmenes con IA, punto de reorden y señales de compra',
   'proveedores.gestionar': 'Gestionar proveedores',
@@ -1166,7 +1168,8 @@ const PERMISSIONS = {
 const DEFAULT_ROLE_PERMS = {
   ADMIN: Object.keys(PERMISSIONS),
   SUPERVISOR: ['tablero.ver', 'costos.ver', 'inventario.ver', 'inventario.editar', 'movimientos.crear', 'movimientos.aprobar', 'entradas.crear', 'entradas.aprobar', 'conteos.crear', 'whatsapp.revisar', 'sheets.sincronizar', 'conciliacion.ver', 'inteligencia.ver', 'proveedores.gestionar', 'gastos.gestionar', 'bitacora.ver', 'solicitudes.crear', 'facturacion.crear', 'facturacion.emitir', 'caja.ver'],
-  CAJERO: ['inventario.ver', 'movimientos.crear', 'facturacion.crear', 'facturacion.emitir', 'caja.ver', 'solicitudes.crear'],
+  // Cajero: ingresa productos (entradas en borrador), factura, verifica inventario y caja, y envía a Alegra. Sin indicadores ni costos.
+  CAJERO: ['inventario.ver', 'entradas.crear', 'facturacion.crear', 'facturacion.emitir', 'caja.ver', 'alegra.enviar'],
   EMPLEADO: ['inventario.ver', 'movimientos.crear', 'entradas.crear', 'conteos.crear', 'solicitudes.crear', 'facturacion.crear'],
   SOCIO: ['socios.ver'],
   AUDITOR: ['tablero.ver', 'costos.ver', 'inventario.ver', 'conciliacion.ver', 'inteligencia.ver', 'bitacora.ver'],
@@ -2320,8 +2323,8 @@ RENDER.inventario = () => {
     <select class="in" id="iv-cat" style="width:auto">${opt('', 'Todas las categorías')}${cats().map((c) => opt(c, c, IV.cat)).join('')}</select>
     <select class="in" id="iv-st" style="width:auto">${opt('', 'Todos los estados')}${['Disponible', 'Bajo', 'Agotado', 'Vence pronto'].map((s) => opt(s, s, IV.st)).join('')}</select>
     <span class="spacer"></span>
-    ${can('inventario.editar') ? `<a class="btn" href="#importar">${ic('upload')} Importar Excel</a>` : ''}<button class="btn" id="iv-count">${ic('count')} Conteo físico</button>
-    <button class="btn" id="iv-mv">${ic('sync')} Registrar movimiento</button>
+    ${can('inventario.editar') ? `<a class="btn" href="#importar">${ic('upload')} Importar Excel</a>` : ''}${can('conteos.crear') ? `<button class="btn" id="iv-count">${ic('count')} Conteo físico</button>` : ''}
+    ${can('movimientos.crear') ? `<button class="btn" id="iv-mv">${ic('sync')} Registrar movimiento</button>` : ''}
     ${can('inventario.editar') ? `<button class="btn pri" id="iv-new">${ic('plus')} Nuevo producto</button>` : ''}
   </div>
   <div class="tbl-wrap"><table><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th class="n">Stock</th><th class="n">Mín / Máx</th><th class="n money">Costo prom.</th><th class="n money">Último precio</th><th class="n money">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -2334,7 +2337,7 @@ RENDER.inventario = () => {
     <td class="n num money">${p.avgCost ? money(p.avgCost) : '—'}</td><td class="n num money">${p.lastPrice ? money(p.lastPrice) : '—'}</td>
     <td class="n num money">${p.avgCost ? money(Math.max(0, s) * p.avgCost) : '—'}</td>
     <td>${pill(lab, cls)}</td>
-    <td><div class="actions" style="flex-wrap:nowrap"><button class="btn sm" data-mv="${p.id}" title="Registrar movimiento">${ic('sync')}</button><button class="btn sm" data-hist="${p.id}" title="Historial">${ic('hist')}</button>${can('inventario.editar') ? `<button class="btn sm" data-edit="${p.id}" title="Editar">${ic('edit')}</button>` : ''}</div></td></tr>`; }).join('') || `<tr><td colspan="10"><div class="empty">No hay productos con esos filtros.</div></td></tr>`}
+    <td><div class="actions" style="flex-wrap:nowrap">${can('movimientos.crear') ? `<button class="btn sm" data-mv="${p.id}" title="Registrar movimiento">${ic('sync')}</button>` : ''}<button class="btn sm" data-hist="${p.id}" title="Historial">${ic('hist')}</button>${can('inventario.editar') ? `<button class="btn sm" data-edit="${p.id}" title="Editar">${ic('edit')}</button>` : ''}</div></td></tr>`; }).join('') || `<tr><td colspan="10"><div class="empty">No hay productos con esos filtros.</div></td></tr>`}
   </tbody></table></div>
   <p class="muted small" style="margin:0">${list.length} productos<span class="money"> · valor ${money(total)}</span> · El stock es el inventario teórico: inicial + movimientos aprobados.</p>`;
 };
@@ -2344,8 +2347,8 @@ BIND.inventario = (el) => {
   $('#iv-cat', el).onchange = (e) => { IV.cat = e.target.value; render(); };
   $('#iv-st', el).onchange = (e) => { IV.st = e.target.value; render(); };
   $('#iv-new', el)?.addEventListener('click', () => productForm());
-  $('#iv-mv', el).onclick = () => movementForm();
-  $('#iv-count', el).onclick = () => countForm();
+  $('#iv-mv', el)?.addEventListener('click', () => movementForm());
+  $('#iv-count', el)?.addEventListener('click', () => countForm());
   $$('[data-mv]', el).forEach((b) => (b.onclick = () => movementForm({ productId: b.dataset.mv })));
   $$('[data-hist]', el).forEach((b) => (b.onclick = () => kardex(b.dataset.hist)));
   $$('[data-edit]', el).forEach((b) => (b.onclick = () => productForm(prodById(b.dataset.edit))));
@@ -2439,8 +2442,8 @@ function kardex(pid) {
     <div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table><thead><tr><th>Fecha</th><th>Tipo</th><th class="n">Cantidad</th><th class="n">Saldo</th><th>Fuente</th><th>Responsable · área</th><th>Estado</th><th></th></tr></thead><tbody>
     ${rows.map(({ m, bal }) => `<tr><td class="small">${fdt(m.ts)}</td><td>${MOVEMENT_TYPES[m.type].label}${m.reason ? `<span class="sub">${esc(m.reason)}</span>` : ''}</td><td class="n num ${MOVEMENT_TYPES[m.type].sign < 0 ? 'neg' : 'pos'}">${MOVEMENT_TYPES[m.type].sign < 0 ? '−' : '+'}${num(m.qty)}</td><td class="n num">${bal === null ? '—' : num(bal)}</td><td>${esc(SOURCES[m.source] || m.source)}${m.evidence ? ' <span class="tag">evidencia</span>' : ''}</td><td class="small">${esc(m.user || '')}${m.area ? ' · ' + esc(m.area) : ''}</td><td>${mvPill(m.status)}</td><td>${m.status === 'aprobado' && !m.reversesId && can('movimientos.aprobar') ? `<button class="btn sm bad" data-void="${m.id}">Anular</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8"><div class="empty">Sin movimientos</div></td></tr>'}
     </tbody></table></div><p class="muted small" style="margin:0">Los movimientos no se eliminan. Anular crea un contramovimiento que conserva la trazabilidad.</p>`,
-    foot: `<button class="btn" id="kx-mv">${ic('sync')} Registrar movimiento</button><button class="btn pri" data-close>Cerrar</button>` });
-  md.querySelector('#kx-mv').onclick = () => movementForm({ productId: pid });
+    foot: `${can('movimientos.crear') ? `<button class="btn" id="kx-mv">${ic('sync')} Registrar movimiento</button>` : ''}<button class="btn pri" data-close>Cerrar</button>` });
+  md.querySelector('#kx-mv')?.addEventListener('click', () => movementForm({ productId: pid }));
   $$('[data-void]', md).forEach((b) => (b.onclick = async () => { const reason = await ask({ title: 'Anular movimiento', text: 'Se creará un ajuste que revierte este movimiento. El original queda visible como anulado.', input: 'Motivo de la anulación', label: 'Anular', danger: true }); if (reason) { await run('voidMv', b.dataset.void, reason); kardex(pid); toast('Movimiento anulado'); } }));
 }
 
@@ -3385,7 +3388,9 @@ const cl = {
     cl.renderT = setTimeout(() => { if ($('#modal') || document.activeElement?.matches?.('input,textarea,select')) { cl.renderSoon(); return; } render(); }, 800);
   },
   /* ---- personas y perfiles ---- */
-  myUser: () => S.users?.find((u) => u.claudeId && u.claudeId === cl.myId),
+  myUser: () => S.users?.find((u) => u.claudeId && u.claudeId === cl.myId) || cl.byEmail(cl.meInfo?.email),
+  /** Usuario creado a mano en Control de acceso (sin cuenta vinculada) con este correo. */
+  byEmail: (email) => { const e = String(email || '').trim().toLowerCase(); return e ? S.users?.find((u) => !u.claudeId && (u.email || '').trim().toLowerCase() === e) : undefined; },
   /** Para `me()`: quien no es administrador siempre se ve a sí mismo; quien aún no tiene perfil entra como empleado. */
   meOverride() {
     if (!cl.on() || !cl.myId) return null;
@@ -3398,6 +3403,13 @@ const cl = {
   /** Agrega a Control de acceso a quien pidió entrar (solo lo hace la vista de un administrador). */
   admit(claudeId, req) {
     if (!cl.admin || S.users?.some((u) => u.claudeId === claudeId)) return;
+    const pre = cl.byEmail(req?.email);
+    if (pre) {
+      pre.claudeId = claudeId;
+      log('usuario.vinculo', `${pre.name} entró con su cuenta de Claude (${ROLES[pre.role]})`, 'Sistema');
+      toast(`${pre.name} entró a Capybara Control como ${ROLES[pre.role]}.`);
+      save(); cl.renderSoon(); return;
+    }
     const base = String(req?.name || '').trim().slice(0, 60) || 'Persona nueva';
     const name = S.users.some((u) => u.name === base) ? `${base} (${S.users.length + 1})` : base;
     S.users.push({ id: uid('u'), claudeId, name, email: String(req?.email || '').slice(0, 120), role: 'EMPLEADO', area: '', areas: [], phone: '', active: true });
@@ -3415,11 +3427,12 @@ const cl = {
       S.settings.user = cl.myUser().name;
       return;
     }
-    if (u) { if (u.role === 'ADMIN') S.settings.user ||= u.name; return; }
+    if (u && u.claudeId) { if (u.role === 'ADMIN') S.settings.user ||= u.name; return; }
     if (!cl.joined && cl.write) {
       cl.joined = true;
       try { await cl.db.doc('ccj/' + cl.myId).set({ name: cl.meInfo?.name || '', email: cl.meInfo?.email || '', at: new Date().toISOString() }); } catch { /* sin permiso de escritura */ }
     }
+    if (u) return; // creado antes por correo: ya tiene perfil; el administrador vincula la cuenta al abrir
     if (first !== 'silent') toast('Entraste como empleado. El administrador puede asignarte tu perfil en Control de acceso.');
   },
   /** Deja el catálogo y vacía lo transaccional y de ejemplo (igual que en Supabase). */
@@ -3574,7 +3587,7 @@ function seedAlegra() {
   ICON.lock = '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
 })();
 const VIEW_PERM = { miturno: 'movimientos.crear', dashboard: 'tablero.ver', inventario: 'inventario.ver', entradas: 'entradas.crear', marchados: 'movimientos.crear', whatsapp: 'whatsapp.revisar', drive: 'sheets.sincronizar', alegra: 'alegra.gestionar', inteligencia: 'inteligencia.ver', conciliacion: 'conciliacion.ver', proveedores: 'proveedores.gestionar', gastos: 'gastos.gestionar', bitacora: 'bitacora.ver', acceso: 'usuarios.gestionar', integraciones: 'integraciones.configurar' };
-const allowed = (v) => !VIEW_PERM[v] || can(VIEW_PERM[v]);
+const allowed = (v) => (v === 'alegra' ? can('alegra.gestionar') || can('alegra.enviar') : !VIEW_PERM[v] || can(VIEW_PERM[v]));
 const homeView = () => (can('tablero.ver') ? 'dashboard' : me().role === 'SOCIO' || (can('socios.ver') && !can('movimientos.crear')) ? 'socios' : me().role === 'CAJERO' && can('facturacion.crear') ? 'facturacion' : can('movimientos.crear') ? 'miturno' : Object.keys(VIEWS).find((v) => allowed(v)) || 'miturno');
 
 /* parches de shell: menú filtrado, guardas, selector "Ver como" */
@@ -3823,10 +3836,11 @@ function alegraPush(id) {
   log('alegra.exportar', `${p.invoice} → ${p.alegraBillId}`);
 }
 RENDER.alegra = () => {
-  const A = S.alegra;
+  const A = S.alegra, full = can('alegra.gestionar');
+  if (!full) AL.tab = 'enviar';
   const pend = S.purchases.filter((p) => p.status === 'aprobada' && !p.alegraBillId && p.source !== 'alegra' && p.kind !== 'orden').sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt));
   const sent = S.purchases.filter((p) => p.alegraBillId).length;
-  const tabs = [['facturas', 'Facturas de proveedor', A.bills.filter((b) => !['vinculada', 'importada', 'gasto', 'existe'].includes(alegraBillState(b))).length], ['enviar', 'Enviar a Alegra', pend.length], ['vinculos', 'Vínculos', 0], ['registro', 'Registro', 0]];
+  const tabs = full ? [['facturas', 'Facturas de proveedor', A.bills.filter((b) => !['vinculada', 'importada', 'gasto', 'existe'].includes(alegraBillState(b))).length], ['enviar', 'Enviar a Alegra', pend.length], ['vinculos', 'Vínculos', 0], ['registro', 'Registro', 0]] : [['enviar', 'Enviar a Alegra', pend.length]];
   let body = '';
   if (AL.tab === 'facturas') body = `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Detalle</th><th class="n">Total</th><th>Pago</th><th>Estado en Capybara</th><th></th></tr></thead><tbody>
     ${A.bills.map((b) => { const st = alegraBillState(b); return `<tr class="sev ${st === 'sin_vincular' ? 'sev-bad' : st === 'whatsapp' ? 'sev-warn' : ''}"><td class="small">${fdate(b.date + 'T12:00')}</td><td>${esc(b.provider.name)}<span class="sub mono">Alegra #${esc(b.provider.id)}</span></td><td class="mono small">${esc(b.number)}<span class="sub">id ${esc(b.id)}</span></td>
@@ -3841,6 +3855,9 @@ RENDER.alegra = () => {
     <div><h3 style="margin-bottom:8px">Proveedores</h3><div class="tbl-wrap"><table><thead><tr><th>Capybara</th><th>NIT</th><th>Contacto en Alegra</th></tr></thead><tbody>${S.suppliers.map((s) => `<tr><td>${esc(s.name)}</td><td class="mono small">${esc(s.taxId || '—')}</td><td><input class="in mono" data-sl="${s.id}" value="${esc(A.supplierLinks[s.id] || '')}" placeholder="id" style="width:110px"></td></tr>`).join('')}</tbody></table></div></div>
     <div><h3 style="margin-bottom:8px">Ítems de Alegra ↔ productos</h3><div class="tbl-wrap"><table><thead><tr><th>Ítem en Alegra</th><th>Producto en Capybara</th></tr></thead><tbody>${A.items.map((it) => { const linked = Object.entries(A.itemLinks).find(([, v]) => v === it.id)?.[0]; const sug = linked ? null : (it.reference && S.products.find((p) => p.code === it.reference)) || matchProduct(it.name, catalogForParser())?.product; return `<tr><td><b>${esc(it.name)}</b><span class="sub mono">#${esc(it.id)}${it.reference ? ' · ref ' + esc(it.reference) : ''}</span></td><td><select class="in" data-il="${it.id}">${opt('', '— sin vincular —')}${prodOptions(linked || '', (p) => p.kind !== 'activo')}</select>${sug ? `<span class="sub">Sugerido: ${esc(sug.name)} <button class="btn sm" data-ils="${it.id}" data-p="${sug.id}">Usar</button></span>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div></div>`;
   if (AL.tab === 'registro') body = `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>${A.log.slice(0, 60).map((l) => `<tr><td class="small mono">${fdt(l.ts)}</td><td><span class="tag mono">${esc(l.action)}</span></td><td>${pill(l.status, l.status === 'ok' ? 'p-ok' : 'p-bad')}</td><td class="small">${esc(l.detail)}</td></tr>`).join('')}</tbody></table></div>`;
+  if (!full) return `<p class="muted small" style="margin:0 0 10px">Envía a Alegra las compras aprobadas. Las facturas de venta emitidas se envían desde <a href="#facturacion">Facturación</a>.</p>
+  <div class="tabs">${tabs.map(([k, l, c]) => `<button data-altab="${k}" class="on">${l}${c ? `<span class="ct">${c}</span>` : ''}</button>`).join('')}</div>
+  ${body}`;
   return `
   <div class="grid g2" style="align-items:start">
     <div class="card"><div class="card-h"><h2>Conexión con Alegra</h2><span class="spacer"></span>${S.settings.mode === 'api' ? pill('Desde el backend', 'p-ok') : pill('Ejemplo', 'p-warn')}</div>
@@ -3867,13 +3884,13 @@ BIND.alegra = (el) => {
   $$('[data-sl]', el).forEach((i) => (i.onchange = () => { S.alegra.supplierLinks[i.dataset.sl] = i.value.trim(); save(); toast('Vínculo guardado'); }));
   $$('[data-il]', el).forEach((s) => (s.onchange = () => { for (const [k, v] of Object.entries(S.alegra.itemLinks)) if (v === s.dataset.il) delete S.alegra.itemLinks[k]; if (s.value) S.alegra.itemLinks[s.value] = s.dataset.il; save(); render(); }));
   $$('[data-ils]', el).forEach((b) => (b.onclick = () => { S.alegra.itemLinks[b.dataset.p] = b.dataset.ils; save(); render(); toast('Ítem vinculado'); }));
-  $('#al-sync', el).onclick = async () => {
+  if ($('#al-sync', el)) $('#al-sync', el).onclick = async () => {
     if (S.settings.mode === 'api') { try { const r = await remote.req('/api/v1/alegra/sync', { method: 'POST', body: {} }); toast(`Alegra: ${r.bills.nuevas} nuevas, ${r.bills.vinculadas} vinculadas`); await remote.load(); } catch (e) { toast(e.message); } return; }
     S.alegra.lastSync = new Date().toISOString();
     const n = S.alegra.bills.filter((b) => !['vinculada', 'importada', 'gasto'].includes(alegraBillState(b))).length;
     S.alegra.log.unshift({ ts: S.alegra.lastSync, action: 'facturas.consultar', status: 'ok', detail: `${S.alegra.bills.length} facturas leídas · ${n} por revisar (simulado)` }); save(); render(); toast(`${n} facturas por revisar`);
   };
-  $('#al-hook', el).onclick = () => { S.alegra.webhooks = true; S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'webhooks.suscribir', status: 'ok', detail: 'new-bill, edit-bill, delete-bill, new-item, edit-item (simulado)' }); save(); render(); toast('Webhooks activados (simulado)'); };
+  if ($('#al-hook', el)) $('#al-hook', el).onclick = () => { S.alegra.webhooks = true; S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'webhooks.suscribir', status: 'ok', detail: 'new-bill, edit-bill, delete-bill, new-item, edit-item (simulado)' }); save(); render(); toast('Webhooks activados (simulado)'); };
 };
 
 /* ---------------- Control de acceso ---------------- */
@@ -4056,7 +4073,7 @@ RENDER.facturacion = () => {
       <span class="spacer"></span>
       ${inv ? `<span class="small">Factura <b class="mono">${esc(inv)}</b> · ${esc(row.customer || '')} · <b class="num">${money(invTot)}</b></span>
         ${invStatus(inv) === 'borrador' && can('facturacion.emitir') ? `<button class="btn sm pri" id="gs-emit">${ic('check')} Emitir ${esc(inv)}</button>` : ''}
-        ${invStatus(inv) === 'emitida' && !S.billing.status[inv]?.alegra && can('alegra.gestionar') ? `<button class="btn sm" id="gs-alegra">Enviar a Alegra</button>` : ''}
+        ${invStatus(inv) === 'emitida' && !S.billing.status[inv]?.alegra && (can('alegra.gestionar') || can('alegra.enviar')) ? `<button class="btn sm" id="gs-alegra">Enviar a Alegra</button>` : ''}
         ${invStatus(inv) === 'borrador' && !can('facturacion.emitir') ? pill('Un supervisor la emite', 'p-info') : ''}` : ''}
     </div>
     <div class="gs-fx"><span class="gs-ref mono">${ref}</span><span class="gs-fxi">fx</span><span class="gs-fxv mono" id="gs-fxv">${esc(String(fx))}</span></div>
@@ -4413,6 +4430,10 @@ function upgradePartners() {
   if (S.permsV < 2) {
     for (const r of ['SUPERVISOR', 'CAJERO', 'SOCIO']) { const set = new Set(S.rolePerms[r] || DEFAULT_ROLE_PERMS[r] || []); for (const p of DEFAULT_ROLE_PERMS[r] || []) set.add(p); S.rolePerms[r] = [...set]; }
     S.permsV = 2;
+  }
+  if (S.permsV < 3) { // cajero: ingresa productos, factura, verifica y envía a Alegra; sin marchados ni solicitudes
+    S.rolePerms.CAJERO = [...DEFAULT_ROLE_PERMS.CAJERO];
+    S.permsV = 3;
   }
   const add = (u) => { if (!S.users.some((x) => x.email === u.email)) S.users.push({ areas: [], phone: '', active: true, ...u }); };
   if (!S.usersV) { // solo una vez: si alguien los borra, no vuelven a aparecer

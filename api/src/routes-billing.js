@@ -69,7 +69,7 @@ r.post('/invoices/:id/void', perm('facturacion.emitir'), validate(z.object({ rea
   await audit(req, 'factura.anular', 'SalesInvoice', inv.id, null, req.body);
   res.json({ invoice: inv, note: 'Para devolver los productos al inventario, anula las salidas desde el historial del producto.' });
 }));
-r.post('/invoices/:id/alegra', perm('alegra.gestionar'), asyncH(async (req, res) => {
+r.post('/invoices/:id/alegra', perm(['alegra.gestionar', 'alegra.enviar']), asyncH(async (req, res) => {
   const out = await alegra.pushSalesInvoice(req.params.id);
   await audit(req, 'alegra.venta', 'SalesInvoice', req.params.id, null, out);
   res.json(out);

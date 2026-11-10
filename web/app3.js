@@ -18,8 +18,8 @@ RENDER.inventario = () => {
     <select class="in" id="iv-cat" style="width:auto">${opt('', 'Todas las categorías')}${cats().map((c) => opt(c, c, IV.cat)).join('')}</select>
     <select class="in" id="iv-st" style="width:auto">${opt('', 'Todos los estados')}${['Disponible', 'Bajo', 'Agotado', 'Vence pronto'].map((s) => opt(s, s, IV.st)).join('')}</select>
     <span class="spacer"></span>
-    ${can('inventario.editar') ? `<a class="btn" href="#importar">${ic('upload')} Importar Excel</a>` : ''}<button class="btn" id="iv-count">${ic('count')} Conteo físico</button>
-    <button class="btn" id="iv-mv">${ic('sync')} Registrar movimiento</button>
+    ${can('inventario.editar') ? `<a class="btn" href="#importar">${ic('upload')} Importar Excel</a>` : ''}${can('conteos.crear') ? `<button class="btn" id="iv-count">${ic('count')} Conteo físico</button>` : ''}
+    ${can('movimientos.crear') ? `<button class="btn" id="iv-mv">${ic('sync')} Registrar movimiento</button>` : ''}
     ${can('inventario.editar') ? `<button class="btn pri" id="iv-new">${ic('plus')} Nuevo producto</button>` : ''}
   </div>
   <div class="tbl-wrap"><table><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th class="n">Stock</th><th class="n">Mín / Máx</th><th class="n money">Costo prom.</th><th class="n money">Último precio</th><th class="n money">Valor</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -32,7 +32,7 @@ RENDER.inventario = () => {
     <td class="n num money">${p.avgCost ? money(p.avgCost) : '—'}</td><td class="n num money">${p.lastPrice ? money(p.lastPrice) : '—'}</td>
     <td class="n num money">${p.avgCost ? money(Math.max(0, s) * p.avgCost) : '—'}</td>
     <td>${pill(lab, cls)}</td>
-    <td><div class="actions" style="flex-wrap:nowrap"><button class="btn sm" data-mv="${p.id}" title="Registrar movimiento">${ic('sync')}</button><button class="btn sm" data-hist="${p.id}" title="Historial">${ic('hist')}</button>${can('inventario.editar') ? `<button class="btn sm" data-edit="${p.id}" title="Editar">${ic('edit')}</button>` : ''}</div></td></tr>`; }).join('') || `<tr><td colspan="10"><div class="empty">No hay productos con esos filtros.</div></td></tr>`}
+    <td><div class="actions" style="flex-wrap:nowrap">${can('movimientos.crear') ? `<button class="btn sm" data-mv="${p.id}" title="Registrar movimiento">${ic('sync')}</button>` : ''}<button class="btn sm" data-hist="${p.id}" title="Historial">${ic('hist')}</button>${can('inventario.editar') ? `<button class="btn sm" data-edit="${p.id}" title="Editar">${ic('edit')}</button>` : ''}</div></td></tr>`; }).join('') || `<tr><td colspan="10"><div class="empty">No hay productos con esos filtros.</div></td></tr>`}
   </tbody></table></div>
   <p class="muted small" style="margin:0">${list.length} productos<span class="money"> · valor ${money(total)}</span> · El stock es el inventario teórico: inicial + movimientos aprobados.</p>`;
 };
@@ -42,8 +42,8 @@ BIND.inventario = (el) => {
   $('#iv-cat', el).onchange = (e) => { IV.cat = e.target.value; render(); };
   $('#iv-st', el).onchange = (e) => { IV.st = e.target.value; render(); };
   $('#iv-new', el)?.addEventListener('click', () => productForm());
-  $('#iv-mv', el).onclick = () => movementForm();
-  $('#iv-count', el).onclick = () => countForm();
+  $('#iv-mv', el)?.addEventListener('click', () => movementForm());
+  $('#iv-count', el)?.addEventListener('click', () => countForm());
   $$('[data-mv]', el).forEach((b) => (b.onclick = () => movementForm({ productId: b.dataset.mv })));
   $$('[data-hist]', el).forEach((b) => (b.onclick = () => kardex(b.dataset.hist)));
   $$('[data-edit]', el).forEach((b) => (b.onclick = () => productForm(prodById(b.dataset.edit))));
@@ -137,8 +137,8 @@ function kardex(pid) {
     <div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table><thead><tr><th>Fecha</th><th>Tipo</th><th class="n">Cantidad</th><th class="n">Saldo</th><th>Fuente</th><th>Responsable · área</th><th>Estado</th><th></th></tr></thead><tbody>
     ${rows.map(({ m, bal }) => `<tr><td class="small">${fdt(m.ts)}</td><td>${MOVEMENT_TYPES[m.type].label}${m.reason ? `<span class="sub">${esc(m.reason)}</span>` : ''}</td><td class="n num ${MOVEMENT_TYPES[m.type].sign < 0 ? 'neg' : 'pos'}">${MOVEMENT_TYPES[m.type].sign < 0 ? '−' : '+'}${num(m.qty)}</td><td class="n num">${bal === null ? '—' : num(bal)}</td><td>${esc(SOURCES[m.source] || m.source)}${m.evidence ? ' <span class="tag">evidencia</span>' : ''}</td><td class="small">${esc(m.user || '')}${m.area ? ' · ' + esc(m.area) : ''}</td><td>${mvPill(m.status)}</td><td>${m.status === 'aprobado' && !m.reversesId && can('movimientos.aprobar') ? `<button class="btn sm bad" data-void="${m.id}">Anular</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8"><div class="empty">Sin movimientos</div></td></tr>'}
     </tbody></table></div><p class="muted small" style="margin:0">Los movimientos no se eliminan. Anular crea un contramovimiento que conserva la trazabilidad.</p>`,
-    foot: `<button class="btn" id="kx-mv">${ic('sync')} Registrar movimiento</button><button class="btn pri" data-close>Cerrar</button>` });
-  md.querySelector('#kx-mv').onclick = () => movementForm({ productId: pid });
+    foot: `${can('movimientos.crear') ? `<button class="btn" id="kx-mv">${ic('sync')} Registrar movimiento</button>` : ''}<button class="btn pri" data-close>Cerrar</button>` });
+  md.querySelector('#kx-mv')?.addEventListener('click', () => movementForm({ productId: pid }));
   $$('[data-void]', md).forEach((b) => (b.onclick = async () => { const reason = await ask({ title: 'Anular movimiento', text: 'Se creará un ajuste que revierte este movimiento. El original queda visible como anulado.', input: 'Motivo de la anulación', label: 'Anular', danger: true }); if (reason) { await run('voidMv', b.dataset.void, reason); kardex(pid); toast('Movimiento anulado'); } }));
 }
 

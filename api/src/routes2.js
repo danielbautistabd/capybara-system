@@ -20,7 +20,8 @@ export async function permMap() {
   cache = { at: Date.now(), map: { ...DEFAULT_ROLE_PERMS, ...Object.fromEntries(rows.map((x) => [x.role, x.perms])) } };
   return cache.map;
 }
-export const perm = (p) => asyncH(async (req, res, next) => (hasPerm(req.user.role, p, await permMap()) ? next() : res.status(403).json({ error: `Tu rol no tiene permiso: ${PERMISSIONS[p] || p}` })));
+/** perm('x') o perm(['x', 'y']): basta con tener uno de los permisos. */
+export const perm = (p) => { const ps = [].concat(p); return asyncH(async (req, res, next) => { const m = await permMap(); return ps.some((x) => hasPerm(req.user.role, x, m)) ? next() : res.status(403).json({ error: `Tu rol no tiene permiso: ${PERMISSIONS[ps[0]] || ps[0]}` }); }); };
 /** Quita costos y valores de la respuesta si el rol no tiene costos.ver */
 export const moneyGuard = asyncH(async (req, res, next) => {
   if (hasPerm(req.user.role, 'costos.ver', await permMap())) return next();
@@ -106,8 +107,8 @@ r.post('/alegra/sync', perm('alegra.gestionar'), asyncH(async (req, res) => {
 }));
 r.get('/alegra/bills', perm('alegra.gestionar'), asyncH(async (req, res) => res.json(await alegra.listBills({ date: req.query.date, status: req.query.status }))));
 r.post('/alegra/bills/import', perm('alegra.gestionar'), asyncH(async (req, res) => res.json(await alegra.importBills({ since: req.body?.since }))));
-r.post('/alegra/purchases/:id/push', perm('alegra.gestionar'), asyncH(async (req, res) => { const out = await alegra.pushPurchase(req.params.id, { pay: req.body?.pay !== false }); await audit(req, 'alegra.exportar', 'Purchase', req.params.id, null, out); res.json(out); }));
-r.post('/alegra/push-pending', perm('alegra.gestionar'), asyncH(async (_q, res) => res.json(await alegra.pushPending())));
+r.post('/alegra/purchases/:id/push', perm(['alegra.gestionar', 'alegra.enviar']), asyncH(async (req, res) => { const out = await alegra.pushPurchase(req.params.id, { pay: req.body?.pay !== false }); await audit(req, 'alegra.exportar', 'Purchase', req.params.id, null, out); res.json(out); }));
+r.post('/alegra/push-pending', perm(['alegra.gestionar', 'alegra.enviar']), asyncH(async (_q, res) => res.json(await alegra.pushPending())));
 r.get('/alegra/items/links', perm('alegra.gestionar'), asyncH(async (_q, res) => res.json(await alegra.suggestItemLinks())));
 r.post('/alegra/items/link', perm('alegra.gestionar'), validate(z.object({ productId: z.string(), alegraItemId: z.string().nullable() })), asyncH(async (req, res) => res.json(await alegra.linkItem(req.body.productId, req.body.alegraItemId))));
 r.post('/alegra/providers/sync', perm('alegra.gestionar'), asyncH(async (req, res) => res.json(await alegra.syncProviders({ create: !!req.body?.create }))));

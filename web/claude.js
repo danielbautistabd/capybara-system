@@ -193,7 +193,9 @@ const cl = {
     cl.renderT = setTimeout(() => { if ($('#modal') || document.activeElement?.matches?.('input,textarea,select')) { cl.renderSoon(); return; } render(); }, 800);
   },
   /* ---- personas y perfiles ---- */
-  myUser: () => S.users?.find((u) => u.claudeId && u.claudeId === cl.myId),
+  myUser: () => S.users?.find((u) => u.claudeId && u.claudeId === cl.myId) || cl.byEmail(cl.meInfo?.email),
+  /** Usuario creado a mano en Control de acceso (sin cuenta vinculada) con este correo. */
+  byEmail: (email) => { const e = String(email || '').trim().toLowerCase(); return e ? S.users?.find((u) => !u.claudeId && (u.email || '').trim().toLowerCase() === e) : undefined; },
   /** Para `me()`: quien no es administrador siempre se ve a sí mismo; quien aún no tiene perfil entra como empleado. */
   meOverride() {
     if (!cl.on() || !cl.myId) return null;
@@ -206,6 +208,13 @@ const cl = {
   /** Agrega a Control de acceso a quien pidió entrar (solo lo hace la vista de un administrador). */
   admit(claudeId, req) {
     if (!cl.admin || S.users?.some((u) => u.claudeId === claudeId)) return;
+    const pre = cl.byEmail(req?.email);
+    if (pre) {
+      pre.claudeId = claudeId;
+      log('usuario.vinculo', `${pre.name} entró con su cuenta de Claude (${ROLES[pre.role]})`, 'Sistema');
+      toast(`${pre.name} entró a Capybara Control como ${ROLES[pre.role]}.`);
+      save(); cl.renderSoon(); return;
+    }
     const base = String(req?.name || '').trim().slice(0, 60) || 'Persona nueva';
     const name = S.users.some((u) => u.name === base) ? `${base} (${S.users.length + 1})` : base;
     S.users.push({ id: uid('u'), claudeId, name, email: String(req?.email || '').slice(0, 120), role: 'EMPLEADO', area: '', areas: [], phone: '', active: true });
@@ -223,11 +232,12 @@ const cl = {
       S.settings.user = cl.myUser().name;
       return;
     }
-    if (u) { if (u.role === 'ADMIN') S.settings.user ||= u.name; return; }
+    if (u && u.claudeId) { if (u.role === 'ADMIN') S.settings.user ||= u.name; return; }
     if (!cl.joined && cl.write) {
       cl.joined = true;
       try { await cl.db.doc('ccj/' + cl.myId).set({ name: cl.meInfo?.name || '', email: cl.meInfo?.email || '', at: new Date().toISOString() }); } catch { /* sin permiso de escritura */ }
     }
+    if (u) return; // creado antes por correo: ya tiene perfil; el administrador vincula la cuenta al abrir
     if (first !== 'silent') toast('Entraste como empleado. El administrador puede asignarte tu perfil en Control de acceso.');
   },
   /** Deja el catálogo y vacía lo transaccional y de ejemplo (igual que en Supabase). */

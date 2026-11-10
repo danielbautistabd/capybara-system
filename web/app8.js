@@ -15,6 +15,10 @@ function upgradePartners() {
     for (const r of ['SUPERVISOR', 'CAJERO', 'SOCIO']) { const set = new Set(S.rolePerms[r] || DEFAULT_ROLE_PERMS[r] || []); for (const p of DEFAULT_ROLE_PERMS[r] || []) set.add(p); S.rolePerms[r] = [...set]; }
     S.permsV = 2;
   }
+  if (S.permsV < 3) { // cajero: ingresa productos, factura, verifica y envía a Alegra; sin marchados ni solicitudes
+    S.rolePerms.CAJERO = [...DEFAULT_ROLE_PERMS.CAJERO];
+    S.permsV = 3;
+  }
   const add = (u) => { if (!S.users.some((x) => x.email === u.email)) S.users.push({ areas: [], phone: '', active: true, ...u }); };
   if (!S.usersV) { // solo una vez: si alguien los borra, no vuelven a aparecer
     add({ id: 'u5', name: 'Cajero 1', email: 'caja1@capybarahostel.com', role: 'CAJERO', area: 'Recepción' });

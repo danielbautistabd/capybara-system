@@ -71,7 +71,7 @@ function seedAlegra() {
   ICON.lock = '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>';
 })();
 const VIEW_PERM = { miturno: 'movimientos.crear', dashboard: 'tablero.ver', inventario: 'inventario.ver', entradas: 'entradas.crear', marchados: 'movimientos.crear', whatsapp: 'whatsapp.revisar', drive: 'sheets.sincronizar', alegra: 'alegra.gestionar', inteligencia: 'inteligencia.ver', conciliacion: 'conciliacion.ver', proveedores: 'proveedores.gestionar', gastos: 'gastos.gestionar', bitacora: 'bitacora.ver', acceso: 'usuarios.gestionar', integraciones: 'integraciones.configurar' };
-const allowed = (v) => !VIEW_PERM[v] || can(VIEW_PERM[v]);
+const allowed = (v) => (v === 'alegra' ? can('alegra.gestionar') || can('alegra.enviar') : !VIEW_PERM[v] || can(VIEW_PERM[v]));
 const homeView = () => (can('tablero.ver') ? 'dashboard' : me().role === 'SOCIO' || (can('socios.ver') && !can('movimientos.crear')) ? 'socios' : me().role === 'CAJERO' && can('facturacion.crear') ? 'facturacion' : can('movimientos.crear') ? 'miturno' : Object.keys(VIEWS).find((v) => allowed(v)) || 'miturno');
 
 /* parches de shell: menú filtrado, guardas, selector "Ver como" */
@@ -320,10 +320,11 @@ function alegraPush(id) {
   log('alegra.exportar', `${p.invoice} → ${p.alegraBillId}`);
 }
 RENDER.alegra = () => {
-  const A = S.alegra;
+  const A = S.alegra, full = can('alegra.gestionar');
+  if (!full) AL.tab = 'enviar';
   const pend = S.purchases.filter((p) => p.status === 'aprobada' && !p.alegraBillId && p.source !== 'alegra' && p.kind !== 'orden').sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt));
   const sent = S.purchases.filter((p) => p.alegraBillId).length;
-  const tabs = [['facturas', 'Facturas de proveedor', A.bills.filter((b) => !['vinculada', 'importada', 'gasto', 'existe'].includes(alegraBillState(b))).length], ['enviar', 'Enviar a Alegra', pend.length], ['vinculos', 'Vínculos', 0], ['registro', 'Registro', 0]];
+  const tabs = full ? [['facturas', 'Facturas de proveedor', A.bills.filter((b) => !['vinculada', 'importada', 'gasto', 'existe'].includes(alegraBillState(b))).length], ['enviar', 'Enviar a Alegra', pend.length], ['vinculos', 'Vínculos', 0], ['registro', 'Registro', 0]] : [['enviar', 'Enviar a Alegra', pend.length]];
   let body = '';
   if (AL.tab === 'facturas') body = `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Factura</th><th>Detalle</th><th class="n">Total</th><th>Pago</th><th>Estado en Capybara</th><th></th></tr></thead><tbody>
     ${A.bills.map((b) => { const st = alegraBillState(b); return `<tr class="sev ${st === 'sin_vincular' ? 'sev-bad' : st === 'whatsapp' ? 'sev-warn' : ''}"><td class="small">${fdate(b.date + 'T12:00')}</td><td>${esc(b.provider.name)}<span class="sub mono">Alegra #${esc(b.provider.id)}</span></td><td class="mono small">${esc(b.number)}<span class="sub">id ${esc(b.id)}</span></td>
@@ -338,6 +339,9 @@ RENDER.alegra = () => {
     <div><h3 style="margin-bottom:8px">Proveedores</h3><div class="tbl-wrap"><table><thead><tr><th>Capybara</th><th>NIT</th><th>Contacto en Alegra</th></tr></thead><tbody>${S.suppliers.map((s) => `<tr><td>${esc(s.name)}</td><td class="mono small">${esc(s.taxId || '—')}</td><td><input class="in mono" data-sl="${s.id}" value="${esc(A.supplierLinks[s.id] || '')}" placeholder="id" style="width:110px"></td></tr>`).join('')}</tbody></table></div></div>
     <div><h3 style="margin-bottom:8px">Ítems de Alegra ↔ productos</h3><div class="tbl-wrap"><table><thead><tr><th>Ítem en Alegra</th><th>Producto en Capybara</th></tr></thead><tbody>${A.items.map((it) => { const linked = Object.entries(A.itemLinks).find(([, v]) => v === it.id)?.[0]; const sug = linked ? null : (it.reference && S.products.find((p) => p.code === it.reference)) || matchProduct(it.name, catalogForParser())?.product; return `<tr><td><b>${esc(it.name)}</b><span class="sub mono">#${esc(it.id)}${it.reference ? ' · ref ' + esc(it.reference) : ''}</span></td><td><select class="in" data-il="${it.id}">${opt('', '— sin vincular —')}${prodOptions(linked || '', (p) => p.kind !== 'activo')}</select>${sug ? `<span class="sub">Sugerido: ${esc(sug.name)} <button class="btn sm" data-ils="${it.id}" data-p="${sug.id}">Usar</button></span>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div></div>`;
   if (AL.tab === 'registro') body = `<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Acción</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>${A.log.slice(0, 60).map((l) => `<tr><td class="small mono">${fdt(l.ts)}</td><td><span class="tag mono">${esc(l.action)}</span></td><td>${pill(l.status, l.status === 'ok' ? 'p-ok' : 'p-bad')}</td><td class="small">${esc(l.detail)}</td></tr>`).join('')}</tbody></table></div>`;
+  if (!full) return `<p class="muted small" style="margin:0 0 10px">Envía a Alegra las compras aprobadas. Las facturas de venta emitidas se envían desde <a href="#facturacion">Facturación</a>.</p>
+  <div class="tabs">${tabs.map(([k, l, c]) => `<button data-altab="${k}" class="on">${l}${c ? `<span class="ct">${c}</span>` : ''}</button>`).join('')}</div>
+  ${body}`;
   return `
   <div class="grid g2" style="align-items:start">
     <div class="card"><div class="card-h"><h2>Conexión con Alegra</h2><span class="spacer"></span>${S.settings.mode === 'api' ? pill('Desde el backend', 'p-ok') : pill('Ejemplo', 'p-warn')}</div>
@@ -364,13 +368,13 @@ BIND.alegra = (el) => {
   $$('[data-sl]', el).forEach((i) => (i.onchange = () => { S.alegra.supplierLinks[i.dataset.sl] = i.value.trim(); save(); toast('Vínculo guardado'); }));
   $$('[data-il]', el).forEach((s) => (s.onchange = () => { for (const [k, v] of Object.entries(S.alegra.itemLinks)) if (v === s.dataset.il) delete S.alegra.itemLinks[k]; if (s.value) S.alegra.itemLinks[s.value] = s.dataset.il; save(); render(); }));
   $$('[data-ils]', el).forEach((b) => (b.onclick = () => { S.alegra.itemLinks[b.dataset.p] = b.dataset.ils; save(); render(); toast('Ítem vinculado'); }));
-  $('#al-sync', el).onclick = async () => {
+  if ($('#al-sync', el)) $('#al-sync', el).onclick = async () => {
     if (S.settings.mode === 'api') { try { const r = await remote.req('/api/v1/alegra/sync', { method: 'POST', body: {} }); toast(`Alegra: ${r.bills.nuevas} nuevas, ${r.bills.vinculadas} vinculadas`); await remote.load(); } catch (e) { toast(e.message); } return; }
     S.alegra.lastSync = new Date().toISOString();
     const n = S.alegra.bills.filter((b) => !['vinculada', 'importada', 'gasto'].includes(alegraBillState(b))).length;
     S.alegra.log.unshift({ ts: S.alegra.lastSync, action: 'facturas.consultar', status: 'ok', detail: `${S.alegra.bills.length} facturas leídas · ${n} por revisar (simulado)` }); save(); render(); toast(`${n} facturas por revisar`);
   };
-  $('#al-hook', el).onclick = () => { S.alegra.webhooks = true; S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'webhooks.suscribir', status: 'ok', detail: 'new-bill, edit-bill, delete-bill, new-item, edit-item (simulado)' }); save(); render(); toast('Webhooks activados (simulado)'); };
+  if ($('#al-hook', el)) $('#al-hook', el).onclick = () => { S.alegra.webhooks = true; S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'webhooks.suscribir', status: 'ok', detail: 'new-bill, edit-bill, delete-bill, new-item, edit-item (simulado)' }); save(); render(); toast('Webhooks activados (simulado)'); };
 };
 
 /* ---------------- Control de acceso ---------------- */
