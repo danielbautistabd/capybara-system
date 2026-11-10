@@ -7,6 +7,8 @@
     "test": "cd api && npm test",
     "dev:api": "cd api && npm run dev",
     "dev:fake": "node web/build.mjs && node tools/fake-api.mjs",
-    "setup": "cd api && npm install && npx prisma migrate dev --name init && npm run db:seed"
+    "setup": "cd api && npm install && npx prisma migrate dev --name init && npm run db:seed",
+    "dev:local": "bash tools/dev-local.sh",
+    "dev:stop": "bash tools/dev-local.sh stop"
   }
 }

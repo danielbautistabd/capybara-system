@@ -19,6 +19,15 @@ capybara-control/
 
 ## Inicio rápido
 
+### Desarrollo local completo (recomendado)
+
+```bash
+npm run dev:local
+```
+
+Levanta PostgreSQL local (puerto 5433), carga la semilla, arranca un **Alegra simulado** (8098) y el backend con la interfaz en http://localhost:8099 (admin@capybarahostel.com / CambiaEsta2026!). Se puede repetir sin perder datos. Para detener: `npm run dev:stop`. Las llamadas que recibe el Alegra simulado quedan en `api/uploads/alegra-simulado.json`.
+
+
 **1. Solo ver la aplicación (sin instalar nada):** abre `dist/index.html` en el navegador. Funciona en modo demostración con datos de ejemplo guardados en ese navegador.
 
 **2. Probar el modo conectado sin base de datos:**
