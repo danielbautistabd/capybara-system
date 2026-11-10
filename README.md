@@ -49,6 +49,18 @@ Cámbialas al entrar.
 
 Lee `ESTADO-DEL-CODIGO.md` para saber qué está probado, qué módulos ya usan la API y los siguientes pasos.
 
+## Versión en Claude (así se usa hoy)
+
+La app está publicada en claude.ai: https://claude.ai/artifact/JN79RgcfuBeY97n62XmCVR
+
+- La interfaz y los datos viven en Claude (capacidad `db` del artefacto) y se actualizan en vivo para todas las personas con acceso. El módulo es `web/claude.js` y se activa solo cuando la página corre dentro de claude.ai.
+- Cada persona entra con su cuenta de Claude. El dueño de la página es administrador. Quien la abre por primera vez pide ingreso y aparece en **Control de acceso** como empleado; ahí el administrador le asigna su perfil (Supervisor, Cajero, Empleado, Socio, Auditor).
+- Compartir: menú **Compartir** de la página. Administradores como **Editor**; el resto del equipo como **Contributor**. Viewer y Commenter solo leen.
+- Reglas de la base (en la publicación): `cca_users` y `cca_s` (usuarios y permisos) solo los escriben Editores y el dueño; `ccj/<persona>` lo escribe cada quien para pedir ingreso.
+- **Guardar copia en Supabase** (Integraciones, solo administradores) copia todo a la tabla `cc_records` con el conector de Supabase de quien pulsa el botón.
+- Los resúmenes de **Inteligencia** y **Socios** usan la IA de Claude (capacidad `sample`).
+- Para publicar una versión nueva: `npm run build` y publicar `dist/capybara-control.html` con las mismas capacidades.
+
 ## Base de datos en Supabase (sin servidor)
 
 La app también puede guardar todo en Supabase sin levantar el backend. Así se usa hoy.

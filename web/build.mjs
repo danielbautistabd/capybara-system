@@ -2,7 +2,7 @@ import fs from 'node:fs';
 const W = new URL('.', import.meta.url).pathname, A = W + '../api/';
 const strip = (s) => s.replace(/^import .*$/gm, '').replace(/^export /gm, '');
 const shell = fs.readFileSync(W + 'shell.html', 'utf8');
-const app = ['app1.js', 'app2.js', 'app3.js', 'app4.js', 'supabase.js', 'app5.js', 'app6.js', 'app7.js', 'app8.js'].map((f) => fs.readFileSync(W + f, 'utf8')).join('\n');
+const app = ['app1.js', 'app2.js', 'app3.js', 'app4.js', 'supabase.js', 'claude.js', 'app5.js', 'app6.js', 'app7.js', 'app8.js'].map((f) => fs.readFileSync(W + f, 'utf8')).join('\n');
 const out = shell
   .replace('/*STYLES*/', () => fs.readFileSync(W + 'styles.css', 'utf8'))
   .replace('/*CORE*/', () => ['core.js', 'insights.js', 'permissions.js', 'productImport.js'].map((f) => strip(fs.readFileSync(A + 'src/core/' + f, 'utf8'))).join('\n'))

@@ -108,7 +108,7 @@ function renderNav() {
     const head = v.grp !== g ? `<div class="grp">${(g = v.grp)}</div>` : '';
     return `${head}<a href="#${k}" class="${view() === k ? 'on' : ''}" ${view() === k ? 'aria-current="page"' : ''}>${ic(v.ic)}<span>${v.short || v.t}</span>${c[k] ? `<span class="ct">${c[k]}</span>` : ''}</a>`;
   }).join('');
-  $('#mode-chip').innerHTML = S.settings.cloud?.on ? `${pill('Supabase', 'p-ok')}<span id="cloud-st">${cloud.statusHtml()}</span>` : S.settings.mode === 'api' ? `${pill('API conectada', 'p-ok')}<span class="small">${esc(remote.base())}</span>` : `${pill('Modo demostración', 'p-warn')}<span class="small">Datos de ejemplo en este navegador</span>`;
+  $('#mode-chip').innerHTML = cl.active ? `${pill('Datos en Claude', 'p-ok')}<span id="cloud-st">${cl.statusHtml()}</span>` : S.settings.cloud?.on ? `${pill('Supabase', 'p-ok')}<span id="cloud-st">${cloud.statusHtml()}</span>` : S.settings.mode === 'api' ? `${pill('API conectada', 'p-ok')}<span class="small">${esc(remote.base())}</span>` : `${pill('Modo demostración', 'p-warn')}<span class="small">Datos de ejemplo en este navegador</span>`;
   $('#who').textContent = S.settings.user;
 }
 const charts = {};

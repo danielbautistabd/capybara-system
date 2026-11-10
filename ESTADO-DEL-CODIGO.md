@@ -29,6 +29,7 @@ web/            Frontend sin framework (HTML + CSS + JS). Se compila en un solo 
   app6.js       Facturación (hoja tipo Google Sheets).
   app7.js       Importar productos desde Excel.
   supabase.js   Guardado en Supabase (tabla cc_records) y cambios en vivo. Va antes de app5.js.
+  claude.js     Dentro de claude.ai: datos en la capacidad db, personas con la capacidad user, copia a Supabase.
   app8.js       Socios, caja del día, modo API de facturas/usuarios, inicio de sesión. Llama a boot().
   build.mjs     Une todo e incrusta api/src/core/*.js (quita import/export).
 api/            Backend Node 20 + Express + Prisma (PostgreSQL).

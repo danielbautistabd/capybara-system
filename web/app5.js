@@ -14,7 +14,7 @@ function seedUsers() {
   ];
 }
 const ROLE_PILL = { ADMIN: 'p-bad', SUPERVISOR: 'p-warn', CAJERO: 'p-ok', EMPLEADO: 'p-info', SOCIO: 'p-info', AUDITOR: 'p-mut' };
-const me = () => (S.settings.mode === 'api' && S.settings.role ? { ...(S.users?.find((u) => u.name === S.settings.user) || {}), name: S.settings.user, role: S.settings.role, area: S.settings.area || '' } : S.users?.find((u) => u.name === S.settings.user) || S.users?.[0] || { name: S.settings.user, role: 'ADMIN', area: '' });
+const me = () => cl.meOverride() || (S.settings.mode === 'api' && S.settings.role ? { ...(S.users?.find((u) => u.name === S.settings.user) || {}), name: S.settings.user, role: S.settings.role, area: S.settings.area || '' } : S.users?.find((u) => u.name === S.settings.user) || S.users?.[0] || { name: S.settings.user, role: 'ADMIN', area: '' });
 const can = (p) => hasPerm(me().role, p, S.rolePerms);
 const myAreas = () => { const u = me(); return [u.area, ...(u.areas || [])].filter(Boolean); };
 const inMyArea = (p) => { const a = myAreas(); return a.some((x) => (AREA_CATS[x] || []).includes(p.category) || normalize(p.location || '').includes(normalize(x))); };
@@ -81,7 +81,7 @@ renderNav = function () {
   $$('#nav a').forEach((a) => { const v = a.getAttribute('href').slice(1); if (!allowed(v) || (v === 'miturno' && can('tablero.ver') && me().role === 'ADMIN' && false)) a.remove(); });
   $$('#nav .grp').forEach((g) => { if (!g.nextElementSibling || g.nextElementSibling.classList.contains('grp')) g.remove(); });
   const u = me();
-  if (S.settings.cloud?.on && u.role !== 'ADMIN') { $('#who').textContent = `${u.name} · ${ROLES[u.role]}`; } else {
+  if ((S.settings.cloud?.on || cl.on()) && u.role !== 'ADMIN') { $('#who').textContent = `${u.name} · ${ROLES[u.role]}`; } else {
   $('#who').innerHTML = `<select class="in" id="as-user" aria-label="Ver como" style="background:rgba(255,255,255,.08);color:inherit;border-color:rgba(255,255,255,.2);padding:5px 8px;margin-top:4px">${S.users.filter((x) => x.active).map((x) => opt(x.name, `${x.name} · ${ROLES[x.role]}`, u.name)).join('')}</select>`;
   $('#as-user').onchange = (e) => { S.settings.user = e.target.value; save(); toast(`Viendo como ${me().name} (${ROLES[me().role]})`); location.hash = homeView(); render(); };
   }

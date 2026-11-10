@@ -170,7 +170,12 @@ RENDER.integraciones = () => {
   const s = S.settings, base = s.baseUrl || 'https://control.capybarahostel.com';
   return `
   <div class="grid g2" style="align-items:start">
-    <div class="card" style="grid-column:1/-1"><div class="card-h"><h2>Base de datos en Supabase</h2><span class="spacer"></span>${s.cloud?.on ? pill('Conectada', 'p-ok') : pill('Sin conectar', 'p-mut')}</div>
+    ${cl.active ? `<div class="card" style="grid-column:1/-1"><div class="card-h"><h2>Datos en Claude</h2><span class="spacer"></span><span id="cloud-st">${cl.statusHtml()}</span></div>
+      <p class="small" style="margin:0 0 8px">Los datos se guardan en Claude y se actualizan en vivo para todas las personas con quienes compartas esta página. Cada persona entra con su cuenta de Claude.</p>
+      <p class="muted small" style="margin:0">Para sumar a alguien: menú <b>Compartir</b> de la página. Administradores como <b>Editor</b>; el resto del equipo como <b>Contributor</b>. Al abrirla por primera vez, la persona aparece en <b>Control de acceso</b> como empleado y ahí le asignas su perfil.</p>
+      ${cl.admin ? `<div class="row" style="margin-top:10px"><button class="btn" id="cl-backup">Guardar copia en Supabase</button><span class="muted small">Copia todo a la tabla cc_records del proyecto capybara-control con tu conector de Supabase.</span></div>` : ''}
+    </div>` : ''}
+    <div class="card" style="grid-column:1/-1" ${cl.active ? 'hidden' : ''}><div class="card-h"><h2>Base de datos en Supabase</h2><span class="spacer"></span>${s.cloud?.on ? pill('Conectada', 'p-ok') : pill('Sin conectar', 'p-mut')}</div>
       ${s.cloud?.on ? `<p class="small" style="margin:0 0 10px">Proyecto <span class="mono">${esc(s.cloud.url)}</span> · sesión de <b>${esc(cloud.user?.email || '—')}</b> · <span id="cloud-st">${cloud.statusHtml()}</span></p>
       <p class="muted small" style="margin:0 0 10px">Cada cambio se guarda en Supabase en menos de un segundo y aparece en vivo para el resto del equipo.</p>
       <div class="row"><button class="btn" id="sb-reload">Recargar desde Supabase</button><button class="btn" id="sb-out">Cerrar sesión y desconectar</button></div>` : `
@@ -179,7 +184,7 @@ RENDER.integraciones = () => {
       <div class="row" style="margin-top:10px"><button class="btn pri" id="sb-go">Conectar con Supabase</button></div>
       <p class="muted small" style="margin:10px 0 0">Las cuentas se crean en Supabase › Authentication › Users. Usa la clave <b>anon</b>, nunca la <span class="mono">service_role</span>.</p>`}
     </div>
-    <div class="card"><div class="card-h"><h2>Conexión con el backend</h2><span class="spacer"></span>${s.cloud?.on ? pill('No se usa: datos en Supabase', 'p-mut') : s.mode === 'api' ? pill('API conectada', 'p-ok') : pill('Modo demostración', 'p-warn')}</div>
+    <div class="card" ${cl.active ? 'hidden' : ''}><div class="card-h"><h2>Conexión con el backend</h2><span class="spacer"></span>${s.cloud?.on ? pill('No se usa: datos en Supabase', 'p-mut') : s.mode === 'api' ? pill('API conectada', 'p-ok') : pill('Modo demostración', 'p-warn')}</div>
       <div class="field"><label for="ig-url">URL del backend</label><input class="in mono" id="ig-url" value="${esc(s.baseUrl)}" placeholder="https://control.capybarahostel.com"></div>
       <div class="grid g2" style="margin-top:8px"><div class="field"><label for="ig-email">Correo</label><input class="in" id="ig-email" value="admin@capybarahostel.com" autocomplete="username"></div><div class="field"><label for="ig-pw">Contraseña</label><input class="in" id="ig-pw" type="password" autocomplete="current-password"></div></div>
       <div class="row" style="margin-top:10px"><button class="btn" id="ig-test">Probar conexión</button><button class="btn pri" id="ig-login">Conectar con la API</button>${s.mode === 'api' ? '<button class="btn" id="ig-demo">Volver a modo demostración</button>' : ''}</div>
@@ -189,8 +194,8 @@ RENDER.integraciones = () => {
       <label class="row"><input type="checkbox" id="ig-auto" ${s.autoApply ? 'checked' : ''}> Aplicar automáticamente los movimientos con confianza ≥ <b class="num">${Math.round(s.threshold * 100)} %</b></label>
       <p class="muted small" style="margin:4px 0 10px">Por debajo del umbral, todo queda pendiente de aprobación. Recomendado: dejarlo apagado las primeras semanas.</p>
       <div class="grid g2"><div class="field"><label for="ig-th">Umbral de confianza</label><input class="in num" type="number" min="0.85" max="1" step="0.01" id="ig-th" value="${s.threshold}"></div><div class="field"><label for="ig-win">Ventana para duplicados (horas)</label><input class="in num" type="number" min="1" max="72" id="ig-win" value="${s.windowH}"></div></div>
-      <div class="field" style="margin-top:8px"><label for="ig-user">Usuario actual</label><select class="in" id="ig-user">${USERS.map((u) => opt(u, u, s.user)).join('')}</select></div>
-      ${s.cloud?.on ? '' : '<div class="row" style="margin-top:12px"><button class="btn bad" id="ig-reset">Restablecer datos de ejemplo</button></div>'}
+      ${s.cloud?.on || cl.active ? '' : `<div class="field" style="margin-top:8px"><label for="ig-user">Usuario actual</label><select class="in" id="ig-user">${USERS.map((u) => opt(u, u, s.user)).join('')}</select></div>`}
+      ${s.cloud?.on || cl.active ? '' : '<div class="row" style="margin-top:12px"><button class="btn bad" id="ig-reset">Restablecer datos de ejemplo</button></div>'}
     </div>
   </div>
   <div class="grid g2" style="align-items:start">
@@ -236,6 +241,7 @@ BIND.integraciones = (el) => {
       save(); render(); toast('No se pudo conectar: ' + err.message);
     }
   });
+  $('#cl-backup', el)?.addEventListener('click', async (e) => { e.target.disabled = true; try { await cl.backupToSupabase(); } finally { e.target.disabled = false; } });
   $('#sb-reload', el)?.addEventListener('click', async () => { try { await cloud.load(); render(); toast('Datos recargados'); } catch (err) { toast('No se pudo recargar: ' + err.message); } });
   $('#sb-out', el)?.addEventListener('click', async () => { if (await ask({ title: 'Desconectar Supabase', text: 'La página vuelve a los datos de ejemplo de este navegador. Los datos en Supabase no se borran.', label: 'Desconectar' })) { await cloud.disconnect(); toast('Desconectado'); } });
   $('#ig-test', el).onclick = async () => { s.baseUrl = $('#ig-url', el).value.trim(); try { const h = await remote.health(); toast(h.ok ? 'Conexión correcta: base de datos en línea' : 'El servicio respondió con error'); } catch (e) { toast('No hay conexión con ' + (s.baseUrl || 'el backend') + '. Dentro de claude.ai las llamadas externas están bloqueadas.'); } };
@@ -244,7 +250,7 @@ BIND.integraciones = (el) => {
   $('#ig-auto', el).onchange = (e) => { s.autoApply = e.target.checked; log('config.auto_aplicar', e.target.checked ? 'Activado' : 'Desactivado'); save(); render(); };
   $('#ig-th', el).onchange = (e) => { s.threshold = Math.max(0.85, Math.min(1, +e.target.value || 0.85)); save(); render(); };
   $('#ig-win', el).onchange = (e) => { s.windowH = +e.target.value || 12; save(); };
-  $('#ig-user', el).onchange = (e) => { s.user = e.target.value; save(); renderNav(); };
+  if ($('#ig-user', el)) $('#ig-user', el).onchange = (e) => { s.user = e.target.value; save(); renderNav(); };
   if ($('#ig-reset', el)) $('#ig-reset', el).onclick = async () => { if (await ask({ title: 'Restablecer datos de ejemplo', text: 'Se borrarán los cambios hechos en este navegador y se cargarán de nuevo los datos de ejemplo.', label: 'Restablecer', danger: true })) { const keep = { ...s }; seedState(); S.settings = { ...S.settings, theme: keep.theme, user: keep.user }; save(); render(); toast('Datos de ejemplo restablecidos'); } };
   $$('[data-copy]', el).forEach((b) => (b.onclick = () => navigator.clipboard.writeText(b.dataset.copy).then(() => toast('Copiado'), () => toast('Selecciona el texto y cópialo manualmente.'))));
 };
@@ -257,7 +263,7 @@ function boot() {
   if (settings) S.settings = { ...S.settings, ...settings };
   upgradeState();
   if (S.settings.mode === 'api') remote.load().then(render).catch(() => { S.settings.mode = 'demo'; toast('No se pudo conectar con la API; se muestran datos de ejemplo.'); render(); });
-  cloud.boot();
+  if (window.claude?.use) cl.boot(); else cloud.boot();
   applyTheme();
   $('#theme-btn').onclick = cycleTheme;
   $('#sync-btn').onclick = syncAndReconcile;
