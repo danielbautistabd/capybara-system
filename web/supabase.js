@@ -115,6 +115,7 @@ const cloud = {
       S = st; S.settings = settings;
       cloud.takeSnapshot();
       upgradeState();
+      cloud.identify();
       cloud.ready = true;
       cloud.setStatus('ok');
       cloud.queue(); // sube lo que upgradeState haya completado
@@ -161,17 +162,61 @@ const cloud = {
     cloud.user = data.user;
     return data.user;
   },
-  /** Conecta: sesión → carga → (si está vacía) ofrece subir los datos actuales. */
+  /** Conecta: sesión → carga → (si está vacía) pregunta con qué datos empezar. */
   async connect() {
     const had = await cloud.load();
     if (!had) {
-      const up = await ask({ title: 'La base de datos está vacía', text: 'Puedes subir los datos que ves ahora en esta página como punto de partida. Después podrás editarlos o borrarlos desde la app.', label: 'Subir datos actuales' });
-      if (!up) { cloud.ready = false; throw new Error('no se subieron datos; la conexión quedó pendiente'); }
+      const how = await cloud.choose({
+        title: 'La base de datos está vacía',
+        text: `Elige con qué empezar. <b>Catálogo del hostel</b>: ${S.products.length} productos y ${S.suppliers.length} proveedores del inventario transcrito, sin movimientos, compras, facturas, gastos ni histórico de ventas. <b>Datos de ejemplo</b>: todo lo que ves ahora, útil solo para probar.`,
+        options: [{ label: 'Empezar con el catálogo del hostel', value: 'clean', pri: true }, { label: 'Subir los datos de ejemplo', value: 'demo' }],
+      });
+      if (!how) { cloud.ready = false; throw new Error('no se eligió con qué datos empezar; la conexión quedó pendiente'); }
+      if (how === 'clean') cloud.cleanStart();
+      cloud.identify(true);
       cloud.snap = new Map(); cloud.ready = true; cloud.setStatus('saving');
       await cloud.flush();
       if (cloud.status !== 'ok') throw new Error(cloud.lastError || 'no se pudieron subir los datos');
     }
     cloud.subscribe();
+  },
+  /** Deja el catálogo (productos, proveedores, permisos, configuración) y vacía todo lo transaccional y de ejemplo. */
+  cleanStart() {
+    const settings = S.settings;
+    seedState();
+    S.settings = settings;
+    Object.assign(S, { movements: [], purchases: [], expenses: [], counts: [], audit: [], inbox: [], requests: [], recon: null, lastSync: null, users: [], usersV: 1 });
+    S.insights = { ...(S.insights || {}), reports: [] };
+    S.sheet = { ...S.sheet, rows: [], imported: {}, history: [], preview: null };
+    S.alegra = { ...S.alegra, configured: false, lastSync: null, supplierLinks: {}, items: [], itemLinks: {}, bills: [], log: [] };
+    S.billing = { ...S.billing, next: 1, status: {}, lines: [], draftPurchases: [], history: [], historyV: 2 };
+    log('sistema.inicio', 'Base de datos iniciada con el catálogo del hostel', cloud.user?.email || 'Sistema');
+  },
+  /** Asocia la sesión de Supabase con un usuario de Control de acceso. El primero en conectar queda como administrador. */
+  identify(first = false) {
+    const email = (cloud.user?.email || '').toLowerCase();
+    if (!email) return;
+    S.users ||= [];
+    let u = S.users.find((x) => (x.email || '').toLowerCase() === email);
+    if (!u) {
+      const nm = email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      const name = S.users.some((x) => x.name === nm) ? email : nm;
+      u = { id: uid('u'), name, email, role: first || !S.users.length ? 'ADMIN' : 'EMPLEADO', area: '', areas: [], phone: '', active: true };
+      S.users.push(u);
+      log('usuario.alta', `${email} entró por primera vez (${u.role})`, email);
+      if (u.role !== 'ADMIN') toast('Entraste como empleado. Un administrador puede cambiar tu rol en Control de acceso.');
+    } else if (first && u.role !== 'ADMIN') u.role = 'ADMIN';
+    S.settings.user = u.name;
+  },
+  /** Diálogo con varias opciones; resuelve el valor elegido o null si se cierra. */
+  choose({ title, text, options }) {
+    return new Promise((res) => {
+      let done = false;
+      const fin = (v) => { if (done) return; done = true; closeModal(); res(v); };
+      const m = modal({ title, body: `<p style="margin:0">${text}</p>`, foot: `<button class="btn ghost" data-close>Cancelar</button>` + options.map((o, i) => `<button class="btn ${o.pri ? 'pri' : ''}" data-ch="${i}">${esc(o.label)}</button>`).join('') });
+      m.addEventListener('click', (e) => { const b = e.target.closest('[data-ch]'); if (b) fin(options[+b.dataset.ch].value); });
+      new MutationObserver((_, ob) => { if (!document.body.contains(m)) { ob.disconnect(); fin(null); } }).observe(document.body, { childList: true });
+    });
   },
   async disconnect() {
     try { if (cloud.chan) await cloud.sb.removeChannel(cloud.chan); await cloud.sb?.auth.signOut(); } catch { /* sin red */ }

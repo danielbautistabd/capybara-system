@@ -16,10 +16,13 @@ function upgradePartners() {
     S.permsV = 2;
   }
   const add = (u) => { if (!S.users.some((x) => x.email === u.email)) S.users.push({ areas: [], phone: '', active: true, ...u }); };
-  add({ id: 'u5', name: 'Cajero 1', email: 'caja1@capybarahostel.com', role: 'CAJERO', area: 'Recepción' });
-  add({ id: 'u6', name: 'Cajero 2', email: 'caja2@capybarahostel.com', role: 'CAJERO', area: 'Bar' });
-  add({ id: 'u7', name: 'Socio 1', email: 'socio1@capybarahostel.com', role: 'SOCIO', area: '' });
-  add({ id: 'u8', name: 'Socio 2', email: 'socio2@capybarahostel.com', role: 'SOCIO', area: '' });
+  if (!S.usersV) { // solo una vez: si alguien los borra, no vuelven a aparecer
+    add({ id: 'u5', name: 'Cajero 1', email: 'caja1@capybarahostel.com', role: 'CAJERO', area: 'Recepción' });
+    add({ id: 'u6', name: 'Cajero 2', email: 'caja2@capybarahostel.com', role: 'CAJERO', area: 'Bar' });
+    add({ id: 'u7', name: 'Socio 1', email: 'socio1@capybarahostel.com', role: 'SOCIO', area: '' });
+    add({ id: 'u8', name: 'Socio 2', email: 'socio2@capybarahostel.com', role: 'SOCIO', area: '' });
+    S.usersV = 1;
+  }
   // productos de hospedaje
   for (const [code, name, unit, price, aliases] of [['HOS-001', 'Noche en dormitorio compartido', 'cama-noche', 55000, ['noche dormitorio', 'cama', 'dormitorio']], ['HOS-002', 'Noche en habitación privada', 'hab-noche', 165000, ['noche privada', 'habitacion privada', 'privada']]])
     if (!S.products.some((p) => p.code === code)) S.products.push({ id: 'p_' + code, code, barcode: '', name, aliases, description: '', category: 'Hospedaje', kind: 'servicio', unit, stockInit: 0, stockMin: 0, stockMax: null, avgCost: 0, lastPrice: 0, salePrice: price, supplierId: null, location: 'Recepción', expiresAt: null, photo: null, status: 'activo', notes: 'Servicio de hospedaje', packSize: 1 });
