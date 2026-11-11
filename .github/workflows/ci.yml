@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: capybara_control
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/capybara_control?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/capybara_control?schema=public
+      JWT_SECRET: solo-ci
+      TZ: America/Bogota
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+      - name: Dependencias
+        working-directory: api
+        run: npm ci --no-audit --no-fund
+      - name: Esquema válido
+        working-directory: api
+        run: npx prisma validate
+      - name: Migraciones sobre PostgreSQL limpio
+        working-directory: api
+        run: npx prisma migrate deploy && npx prisma migrate status
+      - name: Semilla
+        working-directory: api
+        run: SEED_ADMIN_PASSWORD=solo-ci-123 npm run db:seed
+      - name: Pruebas
+        working-directory: api
+        run: npm test
+      - name: Compilar la interfaz
+        run: node web/build.mjs
+      - name: El backend arranca y responde
+        working-directory: api
+        run: |
+          node src/server.js > api.log 2>&1 &
+          for i in $(seq 1 20); do curl -fs http://localhost:8080/health && exit 0; sleep 1; done
+          cat api.log; exit 1

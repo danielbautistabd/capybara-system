@@ -15,6 +15,7 @@ import * as alegra from './services/alegra.js';
 import { errorHandler } from './middleware.js';
 import { verifySignature, handleWebhook } from './services/whatsapp.js';
 import { previewSync } from './services/sheets.js';
+import { signedFileUrl } from './services/storage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -55,11 +56,26 @@ app.get('/health', async (_q, res) => {
   try { await prisma.$queryRaw`SELECT 1`; res.json({ ok: true, db: 'ok', ts: new Date() }); }
   catch (e) { res.status(503).json({ ok: false, db: e.message }); }
 });
+/* -------- Tareas programadas por ruta (Supabase Cron + pg_net, o cualquier programador) --------
+ * POST /api/v1/jobs/alegra-import | insights-daily | sheets-sync   con  Authorization: Bearer {CRON_SECRET} */
+const JOBS = {
+  'alegra-import': () => (alegra.isConfigured() ? alegra.importBills({ since: new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10) }) : { skipped: 'Alegra no está configurado' }),
+  'insights-daily': () => dailyInsightJob().then((r) => ({ generatedBy: r.generatedBy })),
+  'sheets-sync': async () => { const out = []; for (const s of await prisma.sheetSource.findMany({ where: { active: true, cron: { not: null } } })) out.push({ source: s.name, stats: (await previewSync(s.id, 'cron')).stats }); return out; },
+};
+app.post('/api/v1/jobs/:job', async (req, res, next) => {
+  const ok = config.cronSecret && req.get('authorization') === `Bearer ${config.cronSecret}`;
+  if (!ok || !JOBS[req.params.job]) return res.status(404).json({ error: 'No encontrado' });
 app.use('/api/v1', routesImport);
 app.use('/api/v1', routes);
 app.use('/api/v1', routes2);
 app.use('/api/v1', routesBilling);
 app.use('/uploads', express.static(path.resolve(config.storage.dir)));
+/* Archivos en Supabase Storage: redirige a un enlace firmado que vence en 5 minutos */
+app.get('/files/:file', async (req, res, next) => { try { const u = await signedFileUrl(req.params.file); if (!u) return res.status(404).end(); res.redirect(302, u); } catch (e) { next(e); } });
+
+  try { res.json({ job: req.params.job, ok: true, result: await JOBS[req.params.job]() }); } catch (e) { next(e); }
+});
 app.get('/openapi.yaml', (_q, res) => res.sendFile(path.join(__dirname, '..', 'openapi.yaml')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(errorHandler);
@@ -87,8 +103,14 @@ function scheduleOthers() {
   }
 }
 
-app.listen(config.port, () => {
-  console.log(`Capybara Control API escuchando en :${config.port}`);
-  scheduleSheets();
-  scheduleOthers();
-});
+export default app;
+
+/* Servidor propio (local, Docker): escucha y programa las tareas en el proceso.
+ * En Vercel (VERCEL=1) la app se exporta como función y las tareas llegan por /api/v1/jobs. */
+if (!process.env.VERCEL) {
+  app.listen(config.port, () => {
+    console.log(`Capybara Control API escuchando en :${config.port}`);
+    scheduleSheets();
+    scheduleOthers();
+  });
+}

@@ -46,6 +46,7 @@ JWT_SECRET=solo-desarrollo-local-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d
 TZ=America/Bogota
 CURRENCY=COP
 DATABASE_URL=postgresql://postgres@localhost:$PGPORT/capybara_control?schema=public&host=/tmp
+DIRECT_URL=postgresql://postgres@localhost:$PGPORT/capybara_control?schema=public&host=/tmp
 STORAGE_DRIVER=local
 UPLOAD_DIR=./uploads
 AUTO_APPLY_CONFIDENCE=0.85
@@ -66,11 +67,12 @@ EOF
 fi
 
 # 3) Dependencias, esquema y semilla
+grep -q "^DIRECT_URL=" "$API/.env" || echo "DIRECT_URL=postgresql://postgres@localhost:$PGPORT/capybara_control?schema=public&host=/tmp" >> "$API/.env"
 cd "$API"
 [ -d node_modules ] || npm ci --no-audit --no-fund
 npx prisma generate >/dev/null
 npx prisma db push --skip-generate >/dev/null
-npm run --silent db:seed
+SEED_ADMIN_PASSWORD='CambiaEsta2026!' SEED_STAFF_PASSWORD='Capybara2026!' SEED_DEMO_USERS=true npm run --silent db:seed
 
 # 4) Interfaz compilada
 node "$ROOT/web/build.mjs" >/dev/null

@@ -17,3 +17,5 @@ Proyecto: Capybara Control, plataforma de inventario, facturación y socios de C
 - Supabase: `web/supabase.js` guarda el estado en la tabla `cc_records` (ver `supabase/schema.sql`). Nunca pongas la clave `service_role` en el frontend.
 - Claude: `web/claude.js` guarda en la base del artefacto (ccs, ccl_*, cca_*, ccj). Publicado en https://claude.ai/artifact/JN79RgcfuBeY97n62XmCVR desde `dist/capybara-control.html`; al republicar, conserva las capacidades db (con sus 4 reglas), user (profile, email), mcp (Supabase execute_sql), downloads y sample.
 - Para trabajar con el backend: `npm run dev:local` (PostgreSQL 5433, Alegra simulado 8098, app y API en 8099). Prueba los cambios del modo API contra ese backend, no solo en modo demostración.
+- Base de datos: los cambios de esquema van como migración de Prisma (`api/prisma/migrations`), con RLS activada en cada tabla nueva. Supabase ya tiene aplicadas `20261111000000_init` y `20261111000100_rls`.
+- Despliegue: la app se exporta en `api/src/server.js` (en Vercel no escucha ni programa tareas; las tareas llegan por `/api/v1/jobs/*` con `CRON_SECRET`). Archivos: `STORAGE_DRIVER=supabase`.

@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 const LOG = process.env.FAKE_ALEGRA_LOG || new URL('../api/uploads/alegra-simulado.json', import.meta.url).pathname;
 const calls = [];
-let next = 5000;
+let next = Number(String(Date.now()).slice(-8)); // ids que no se repiten entre reinicios
 const AUTH = 'Basic ' + Buffer.from('pruebas@capybarahostel.com:token-de-prueba').toString('base64');
 http.createServer((req, res) => {
   let raw = '';

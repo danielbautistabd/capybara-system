@@ -10,7 +10,14 @@ export const config = {
   corsOrigins: list(process.env.CORS_ORIGINS),
   jwtSecret: process.env.JWT_SECRET || 'dev-secret',
   currency: process.env.CURRENCY || 'COP',
-  storage: { driver: process.env.STORAGE_DRIVER || 'local', dir: process.env.UPLOAD_DIR || './uploads' },
+  storage: {
+    driver: process.env.STORAGE_DRIVER || 'local', // local | supabase
+    dir: process.env.UPLOAD_DIR || './uploads',
+    supabaseUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
+    supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY, // solo en el servidor, nunca en el frontend
+    bucket: process.env.SUPABASE_BUCKET || 'evidencias',
+  },
+  cronSecret: process.env.CRON_SECRET, // Supabase Cron lo envía en Authorization: Bearer …
   whatsapp: {
     token: process.env.WHATSAPP_TOKEN,
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID,

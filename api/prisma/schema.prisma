@@ -7,7 +7,8 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL") // en Supabase: pooler de transacciones (6543) con ?pgbouncer=true
+  directUrl = env("DIRECT_URL")   // en Supabase: conexión directa o de sesión (5432), para migraciones
 }
 
 enum Role {

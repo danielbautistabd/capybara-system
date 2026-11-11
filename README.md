@@ -58,6 +58,37 @@ Cámbialas al entrar.
 
 Lee `ESTADO-DEL-CODIGO.md` para saber qué está probado, qué módulos ya usan la API y los siguientes pasos.
 
+## Despliegue: Vercel + Supabase
+
+Hoja de ruta completa: https://claude.ai/artifact/UR6T32L9NRUadzzMkGXCbH
+
+**Ya hecho en Supabase (proyecto capybara-control):** las 25 tablas del backend (migraciones de `api/prisma/migrations`), RLS en todas (solo el API las lee) y el catálogo (13 categorías, 6 proveedores, 85 productos). Sin usuarios todavía.
+
+**Variables del servidor (Vercel › Settings › Environment Variables):**
+
+| Variable | Valor |
+| --- | --- |
+| `DATABASE_URL` | Supabase › Connect › *Transaction pooler* (puerto 6543), agregando `?pgbouncer=true&connection_limit=1` |
+| `DIRECT_URL` | Supabase › Connect › *Session pooler* (puerto 5432), solo para migraciones |
+| `JWT_SECRET` | Cadena larga y aleatoria |
+| `STORAGE_DRIVER` / `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_BUCKET` | `supabase` / `https://ghedaeyshfvlvvkafbyd.supabase.co` / clave *service_role* (solo aquí) / `evidencias` (bucket **privado**) |
+| `CRON_SECRET` | Cadena larga y aleatoria; la misma va en Vault (ver `supabase/cron.sql`) |
+| Alegra, WhatsApp, Google | Como en `api/.env.example` |
+
+**Primer administrador:** en Supabase › SQL Editor, con tu propia contraseña (no la escribas en ningún otro lado):
+
+```sql
+create extension if not exists pgcrypto;
+insert into "User" (id, name, email, "passwordHash", role, areas)
+values (gen_random_uuid()::text, 'Administrador', 'tu-correo@capybarahostel.com', crypt('TU-CONTRASEÑA', gen_salt('bf', 10)), 'ADMIN', '{}');
+```
+
+**Tareas programadas:** después del primer despliegue, `supabase/cron.sql` (Alegra cada 30 min, resumen diario, Sheets cada hora). En Vercel no hay procesos permanentes: las tareas llegan por `POST /api/v1/jobs/*` con `CRON_SECRET`.
+
+**Migraciones nuevas:** `cd api && npx prisma migrate dev --name <cambio>` en local; en Supabase, `npx prisma migrate deploy` con `DIRECT_URL`.
+
+**CI:** `.github/workflows/ci.yml` corre en cada pull request: esquema, migraciones sobre PostgreSQL limpio, semilla, pruebas, compilación y arranque del backend.
+
 ## Versión en Claude (así se usa hoy)
 
 La app está publicada en claude.ai: https://claude.ai/artifact/JN79RgcfuBeY97n62XmCVR

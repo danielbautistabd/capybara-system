@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { CATEGORIES, SUPPLIERS, PRODUCTS } from './seed-data.js';
 
 const prisma = new PrismaClient();
@@ -32,13 +33,17 @@ async function main() {
     });
   }
 
+  // Contraseñas: nunca en el código. SEED_ADMIN_PASSWORD la fija; si falta, se genera una al azar y se muestra una sola vez.
+  const adminPw = process.env.SEED_ADMIN_PASSWORD || crypto.randomBytes(9).toString('base64url');
+  const created = !(await prisma.user.findUnique({ where: { email: 'admin@capybarahostel.com' } }));
   await prisma.user.upsert({
     where: { email: 'admin@capybarahostel.com' },
     update: {},
-    create: { name: 'Administrador', email: 'admin@capybarahostel.com', passwordHash: await bcrypt.hash('CambiaEsta2026!', 10), role: 'ADMIN' },
+    create: { name: 'Administrador', email: 'admin@capybarahostel.com', passwordHash: await bcrypt.hash(adminPw, 10), role: 'ADMIN' },
   });
-  // personal de ejemplo (cambia correos, teléfonos y contraseñas)
-  for (const [name, email, role, area, phone] of [
+  if (created && !process.env.SEED_ADMIN_PASSWORD) console.log(`Administrador creado: admin@capybarahostel.com / ${adminPw}  (cámbiala al entrar)`);
+  // personal de ejemplo: solo en desarrollo (SEED_DEMO_USERS=true), con SEED_STAFF_PASSWORD
+  if (process.env.SEED_DEMO_USERS === 'true') for (const [name, email, role, area, phone] of [
     ['Andrés Pérez', 'recepcion@capybarahostel.com', 'SUPERVISOR', 'Recepción', '573112223344'],
     ['Cajero 1', 'caja1@capybarahostel.com', 'CAJERO', 'Recepción', null],
     ['Cajero 2', 'caja2@capybarahostel.com', 'CAJERO', 'Bar', null],
@@ -47,7 +52,7 @@ async function main() {
     ['Camila Rojas', 'bar@capybarahostel.com', 'EMPLEADO', 'Bar', '573001112233'],
     ['Luz Marina', 'housekeeping@capybarahostel.com', 'EMPLEADO', 'Limpieza', '573004445566'],
     ['Jhon Fredy', 'cocina@capybarahostel.com', 'EMPLEADO', 'Cocina', '573205556677'],
-  ]) await prisma.user.upsert({ where: { email }, update: {}, create: { name, email, role, area, phone, passwordHash: await bcrypt.hash('Capybara2026!', 10) } });
+  ]) await prisma.user.upsert({ where: { email }, update: {}, create: { name, email, role, area, phone, passwordHash: await bcrypt.hash(process.env.SEED_STAFF_PASSWORD || crypto.randomBytes(9).toString('base64url'), 10) } });
   console.log(`Semilla lista: ${CATEGORIES.length} categorías, ${SUPPLIERS.length} proveedores, ${PRODUCTS.length} productos.`);
 }
 
