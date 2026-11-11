@@ -57,7 +57,7 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Marchados, aprobar/rechazar/anular | Sí | |
 | Importar Excel | Sí | `POST /products/import` |
 | Facturación: emitir | Sí | Los borradores viven en el navegador hasta emitir; al emitir se crea y emite en el servidor |
-| Facturación: enviar a Alegra y anular | Sí | `POST /invoices/:id/alegra` y `POST /invoices/:id/void`. Anular no devuelve el inventario solo |
+| Facturación: enviar a Alegra y anular | Sí | `POST /invoices/:id/alegra` y `POST /invoices/:id/void`. Anular devuelve el inventario con contramovimiento (o anula la salida si estaba pendiente) |
 | Socios | Sí | Calcula con las facturas emitidas y los gastos que trae la API |
 | Caja del día | Sí | Con las facturas cargadas. También existe `GET /cash/today` |
 | Control de acceso | Sí | Crear y editar usuarios con contraseña (`POST/PATCH /users`) y guardar la matriz de permisos (`PUT /roles/:role`) |

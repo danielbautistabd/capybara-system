@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { prisma, n } from './db.js';
 import { auth, audit, validate, asyncH, HttpError } from './middleware.js';
 import { perm } from './routes2.js';
-import { proposeMovement, approveMovement } from './services/inventory.js';
+import { proposeMovement, approveMovement, voidMovement } from './services/inventory.js';
 import * as alegra from './services/alegra.js';
 
 const r = Router();
@@ -64,10 +64,27 @@ r.post('/invoices/:id/issue', perm('facturacion.emitir'), asyncH(async (req, res
   await audit(req, 'factura.emitir', 'SalesInvoice', inv.id, null, { number: inv.number, total: n(inv.total), warnings });
   res.json({ invoice: out, warnings });
 }));
+/** Anular una factura emitida: sus salidas de inventario se anulan con contramovimiento (nunca se borran).
+ *  Las salidas ya aprobadas devuelven el stock; las pendientes quedan anuladas para que nadie las apruebe después. */
 r.post('/invoices/:id/void', perm('facturacion.emitir'), validate(z.object({ reason: z.string().min(3) })), asyncH(async (req, res) => {
-  const inv = await prisma.salesInvoice.update({ where: { id: req.params.id }, data: { status: 'anulada', notes: `Anulada: ${req.body.reason}` } });
-  await audit(req, 'factura.anular', 'SalesInvoice', inv.id, null, req.body);
-  res.json({ invoice: inv, note: 'Para devolver los productos al inventario, anula las salidas desde el historial del producto.' });
+  const found = await prisma.salesInvoice.findUnique({ where: { id: req.params.id }, include: { lines: true } });
+  if (!found) throw new HttpError(404, 'Factura no encontrada');
+  if (found.status !== 'emitida') throw new HttpError(409, `La factura ${found.number} está ${found.status}: solo se anulan facturas emitidas`);
+  const reversed = [], cancelled = [];
+  for (const l of found.lines) {
+    if (!l.movementId) continue;
+    const before = await prisma.movement.findUnique({ where: { id: l.movementId } });
+    if (!before || before.status === 'anulado') continue;
+    const r = await voidMovement(l.movementId, req.user.sub, `Factura ${found.number} anulada: ${req.body.reason}`);
+    (before.status === 'aprobado' ? reversed : cancelled).push(r.id);
+  }
+  const inv = await prisma.salesInvoice.update({ where: { id: found.id }, data: { status: 'anulada', notes: `Anulada: ${req.body.reason}` } });
+  await audit(req, 'factura.anular', 'SalesInvoice', inv.id, null, { ...req.body, contramovimientos: reversed, salidasPendientesAnuladas: cancelled });
+  const parts = [];
+  if (reversed.length) parts.push(`${reversed.length} ${reversed.length === 1 ? 'producto volvió' : 'productos volvieron'} al inventario`);
+  if (cancelled.length) parts.push(`${cancelled.length} ${cancelled.length === 1 ? 'salida pendiente quedó anulada' : 'salidas pendientes quedaron anuladas'}`);
+  if (inv.alegraInvoiceId) parts.push(`anúlala también en Alegra (factura ${inv.alegraInvoiceId})`);
+  res.json({ invoice: inv, reversed, cancelled, note: parts.length ? parts.join('; ') + '.' : 'La factura no tenía productos de inventario.' });
 }));
 r.post('/invoices/:id/alegra', perm(['alegra.gestionar', 'alegra.enviar']), asyncH(async (req, res) => {
   const out = await alegra.pushSalesInvoice(req.params.id);

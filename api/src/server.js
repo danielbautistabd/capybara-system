@@ -66,6 +66,8 @@ const JOBS = {
 app.post('/api/v1/jobs/:job', async (req, res, next) => {
   const ok = config.cronSecret && req.get('authorization') === `Bearer ${config.cronSecret}`;
   if (!ok || !JOBS[req.params.job]) return res.status(404).json({ error: 'No encontrado' });
+  try { res.json({ job: req.params.job, ok: true, result: await JOBS[req.params.job]() }); } catch (e) { next(e); }
+});
 app.use('/api/v1', routesImport);
 app.use('/api/v1', routes);
 app.use('/api/v1', routes2);
@@ -73,9 +75,6 @@ app.use('/api/v1', routesBilling);
 app.use('/uploads', express.static(path.resolve(config.storage.dir)));
 /* Archivos en Supabase Storage: redirige a un enlace firmado que vence en 5 minutos */
 app.get('/files/:file', async (req, res, next) => { try { const u = await signedFileUrl(req.params.file); if (!u) return res.status(404).end(); res.redirect(302, u); } catch (e) { next(e); } });
-
-  try { res.json({ job: req.params.job, ok: true, result: await JOBS[req.params.job]() }); } catch (e) { next(e); }
-});
 app.get('/openapi.yaml', (_q, res) => res.sendFile(path.join(__dirname, '..', 'openapi.yaml')));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(errorHandler);
