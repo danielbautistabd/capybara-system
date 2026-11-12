@@ -152,6 +152,8 @@ export async function importBills({ since } = {}) {
       items.push({ productId: p.id, qty: Number(it.quantity), unit: p.unit, unitCost: Number(it.price), subtotal: Number(it.quantity) * Number(it.price) });
     }
     for (const c of b.purchases?.categories || []) {
+      // cada línea de gasto se registra una sola vez, aunque la sincronización corra cada 30 minutos
+      if (await prisma.expense.findFirst({ where: { fingerprint: `alegra-${alegraBillId}-${c.id}` } })) continue;
       await prisma.expense.create({ data: { date: new Date(b.date), category: 'Otros', description: `${c.name || 'Categoría Alegra'} — ${supplier.name} ${number}`, amount: Number(c.price) * Number(c.quantity || 1), supplierId: supplier.id, payMethod: 'Crédito proveedor', source: 'alegra', status: 'pendiente_revision', fingerprint: `alegra-${alegraBillId}-${c.id}` } }).catch(() => null);
       res.gastos++;
     }

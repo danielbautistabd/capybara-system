@@ -285,6 +285,7 @@ function alegraBillState(b) {
   const sup = S.suppliers.find((s) => S.alegra.supplierLinks[s.id] === String(b.provider.id));
   const local = S.purchases.find((p) => (sup && p.supplierId === sup.id && (p.invoice || '').toUpperCase() === b.number.toUpperCase()) || p.alegraBillId === b.id);
   if (local) return 'existe';
+  if (!b.items.length && b.categories.length && (S.expenses || []).some((e) => String(e.fingerprint || '').startsWith(`alegra-${b.id}-`))) return 'gasto';
   if (S.inbox.some((i) => i.doc?.invoiceNumber?.toUpperCase() === b.number.toUpperCase())) return 'whatsapp';
   if (!b.items.length && b.categories.length) return 'categoria';
   if (b.items.some((it) => !Object.entries(S.alegra.itemLinks).find(([, v]) => v === it.id))) return 'sin_vincular';
@@ -359,9 +360,33 @@ RENDER.alegra = () => {
   <div class="tabs">${tabs.map(([k, l, c]) => `<button data-altab="${k}" class="${AL.tab === k ? 'on' : ''}">${l}${c ? `<span class="ct">${c}</span>` : ''}</button>`).join('')}</div>
   ${body}`;
 };
+/** Factura de proveedor de Alegra → la forma que usa esta pantalla */
+const billFromAlegra = (b) => ({
+  id: String(b.id), number: String(b.numberTemplate?.fullNumber || b.numberTemplate?.number || b.billNumber || b.id), date: String(b.date || '').slice(0, 10),
+  provider: { id: String(b.provider?.id ?? b.provider ?? ''), name: b.provider?.name || 'Proveedor' }, total: +b.total || 0, status: +b.balance > 0 ? 'open' : 'closed',
+  items: (b.purchases?.items || []).map((it) => ({ id: String(it.id), name: it.name, quantity: +it.quantity, price: +it.price })),
+  categories: (b.purchases?.categories || []).map((c) => ({ id: String(c.id), name: c.name, quantity: +c.quantity || 1, price: +c.price, observations: c.observations || '' })),
+});
+async function loadAlegraBills() {
+  AL.billsLoading = true;
+  try { const rows = await remote.req('/api/v1/alegra/bills'); S.alegra.bills = rows.map(billFromAlegra).sort((a, b) => b.date.localeCompare(a.date)); AL.billsAt = new Date().toISOString(); }
+  catch (e) { toast('No se pudieron leer las facturas de Alegra: ' + e.message); }
+  finally { AL.billsLoading = false; }
+}
+/** Importa en el servidor las facturas desde una fecha (no duplica: se reconocen por su id de Alegra y su número) */
+async function importAlegraBillsApi(since) {
+  const r = await remote.req('/api/v1/alegra/bills/import', { method: 'POST', body: since ? { since } : {} });
+  await remote.load(); await loadAlegraBills(); render();
+  const parts = [r.nuevas && `${r.nuevas} nuevas como borrador`, r.vinculadas && `${r.vinculadas} vinculadas a compras existentes`, r.gastos && `${r.gastos} gastos`, r.revisar && `${r.revisar} por revisar (ítems sin vincular)`].filter(Boolean);
+  toast(parts.length ? 'Alegra: ' + parts.join(' · ') : 'Alegra: no había facturas nuevas');
+}
 BIND.alegra = (el) => {
+  if (S.settings.mode === 'api' && can('alegra.gestionar') && !AL.billsAt && !AL.billsLoading) loadAlegraBills().then(render);
   $$('[data-altab]', el).forEach((b) => (b.onclick = () => { AL.tab = b.dataset.altab; render(); }));
-  $$('[data-ai]', el).forEach((b) => (b.onclick = () => alegraImport(b.dataset.ai)));
+  $$('[data-ai]', el).forEach((b) => (b.onclick = async () => {
+    if (S.settings.mode === 'api') { const bill = S.alegra.bills.find((x) => x.id === b.dataset.ai); b.disabled = true; try { await importAlegraBillsApi(bill?.date); } catch (e) { b.disabled = false; toast('No se importó: ' + e.message); } return; }
+    alegraImport(b.dataset.ai);
+  }));
   $$('[data-openpu]', el).forEach((a) => (a.onclick = () => { const p = S.purchases.find((x) => x.id === a.dataset.openpu); if (p) PU = { ...JSON.parse(JSON.stringify(p)), taxPct: p.subtotal ? Math.round((p.tax / p.subtotal) * 100) : 0 }; }));
   $$('[data-ap]', el).forEach((b) => (b.onclick = async () => {
     if (S.settings.mode === 'api') { b.disabled = true; try { const r = await remote.req(`/api/v1/alegra/purchases/${b.dataset.ap}/push`, { method: 'POST', body: {} }); await remote.load(); save(); render(); toast(`Compra enviada a Alegra (factura de proveedor ${r.alegraBillId}).`); } catch (e) { b.disabled = false; toast('No se envió a Alegra: ' + e.message); } return; }
@@ -386,7 +411,7 @@ BIND.alegra = (el) => {
     if (S.settings.mode === 'api') return linkItemApi(s.dataset.il, s.value || null); for (const [k, v] of Object.entries(S.alegra.itemLinks)) if (v === s.dataset.il) delete S.alegra.itemLinks[k]; if (s.value) S.alegra.itemLinks[s.value] = s.dataset.il; save(); render(); }));
   $$('[data-ils]', el).forEach((b) => (b.onclick = () => { if (S.settings.mode === 'api') return linkItemApi(b.dataset.ils, b.dataset.p); S.alegra.itemLinks[b.dataset.p] = b.dataset.ils; save(); render(); toast('Ítem vinculado'); }));
   if ($('#al-sync', el)) $('#al-sync', el).onclick = async () => {
-    if (S.settings.mode === 'api') { try { const r = await remote.req('/api/v1/alegra/sync', { method: 'POST', body: {} }); toast(`Alegra: ${r.bills.nuevas} nuevas, ${r.bills.vinculadas} vinculadas`); await remote.load(); } catch (e) { toast(e.message); } return; }
+    if (S.settings.mode === 'api') { try { const r = await remote.req('/api/v1/alegra/sync', { method: 'POST', body: {} }); await remote.load(); await loadAlegraBills(); render(); toast(`Alegra: ${r.bills.nuevas} nuevas, ${r.bills.vinculadas} vinculadas`); } catch (e) { toast(e.message); } return; }
     S.alegra.lastSync = new Date().toISOString();
     const n = S.alegra.bills.filter((b) => !['vinculada', 'importada', 'gasto'].includes(alegraBillState(b))).length;
     S.alegra.log.unshift({ ts: S.alegra.lastSync, action: 'facturas.consultar', status: 'ok', detail: `${S.alegra.bills.length} facturas leídas · ${n} por revisar (simulado)` }); save(); render(); toast(`${n} facturas por revisar`);
