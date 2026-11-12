@@ -136,7 +136,7 @@ r.get('/movements', moneyGuard, asyncH(async (req, res) => {
   if (from || to) where.ts = { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined };
   res.json((await prisma.movement.findMany({ where, orderBy: { ts: 'desc' }, take: Number(take), include: { product: { select: { name: true, unit: true } }, user: { select: { name: true } } } })).map(toCoreMovement));
 }));
-r.post('/movements', validate(movementSchema), asyncH(async (req, res) => {
+r.post('/movements', perm('movimientos.crear'), validate(movementSchema), asyncH(async (req, res) => {
   const { approve, ...data } = req.body;
   const out = await proposeMovement({ ...data, userId: req.user.sub });
   let movement = out.movement;
@@ -159,7 +159,7 @@ r.post('/movements/:id/duplicate', can('SUPERVISOR'), asyncH(async (req, res) =>
   await audit(req, 'movement.duplicate', 'Movement', m.id, null, req.body);
   res.json(toCoreMovement(m));
 }));
-r.post('/movements/:id/request-info', asyncH(async (req, res) => {
+r.post('/movements/:id/request-info', perm('movimientos.aprobar'), asyncH(async (req, res) => {
   const m = await prisma.movement.update({ where: { id: req.params.id }, data: { status: 'requiere_info', notes: req.body?.question } });
   await audit(req, 'movement.request_info', 'Movement', m.id, null, req.body);
   res.json(toCoreMovement(m));
@@ -172,19 +172,19 @@ r.post('/movements/:id/void', can('SUPERVISOR'), validate(z.object({ reason: z.s
 // No existe DELETE /movements/:id a propósito.
 
 /* ============ Marchados (intérprete) ============ */
-r.post('/marchados/interpret', validate(z.object({ text: z.string().min(2) })), asyncH(async (req, res) => {
+r.post('/marchados/interpret', perm('movimientos.crear'), validate(z.object({ text: z.string().min(2) })), asyncH(async (req, res) => {
   const catalog = (await prisma.product.findMany({ where: { status: 'activo' }, include: { category: true } })).map(toCoreProduct);
   const result = parseInstruction(req.body.text, catalog);
   res.json({ ...result, autoApplicable: result.confidence >= config.rules.autoApplyConfidence });
 }));
-r.post('/marchados', validate(z.object({ text: z.string(), items: z.array(z.object({ productId: z.string(), qty: z.number().positive(), unit: z.string().optional() })), type: z.enum(TYPES).default('marchado'), area: z.string().optional(), reason: z.string().optional() })), asyncH(async (req, res) => {
+r.post('/marchados', perm('movimientos.crear'), validate(z.object({ text: z.string(), items: z.array(z.object({ productId: z.string(), qty: z.number().positive(), unit: z.string().optional() })), type: z.enum(TYPES).default('marchado'), area: z.string().optional(), reason: z.string().optional() })), asyncH(async (req, res) => {
   const created = [];
   for (const it of req.body.items) created.push(await proposeMovement({ ...it, type: req.body.type, area: req.body.area, reason: req.body.reason, source: 'manual', userId: req.user.sub, notes: `Mensaje: "${req.body.text}"` }));
   res.status(201).json(created);
 }));
 
 /* ============ Conteos físicos ============ */
-r.post('/counts', validate(z.object({ items: z.array(z.object({ productId: z.string(), qty: z.number().min(0) })), notes: z.string().optional() })), asyncH(async (req, res) => {
+r.post('/counts', perm('conteos.crear'), validate(z.object({ items: z.array(z.object({ productId: z.string(), qty: z.number().min(0) })), notes: z.string().optional() })), asyncH(async (req, res) => {
   const sessionId = `CF-${Date.now()}`;
   const rows = await prisma.$transaction(req.body.items.map((i) => prisma.physicalCount.create({ data: { ...i, countedBy: req.user.name, sessionId, notes: req.body.notes } })));
   await audit(req, 'count.create', 'PhysicalCount', sessionId, null, { n: rows.length });
@@ -205,7 +205,7 @@ const purchaseSchema = z.object({
   attachmentId: z.string().optional(), notes: z.string().optional(), approve: z.boolean().default(false),
 });
 r.get('/purchases', moneyGuard, asyncH(async (req, res) => res.json(await prisma.purchase.findMany({ where: { status: req.query.status }, orderBy: { purchasedAt: 'desc' }, include: { supplier: true, items: true }, take: 200 }))));
-r.post('/purchases', validate(purchaseSchema), asyncH(async (req, res) => {
+r.post('/purchases', perm('entradas.crear'), validate(purchaseSchema), asyncH(async (req, res) => {
   const { items, approve, ...h } = req.body;
   const subtotal = items.reduce((a, i) => a + i.qty * i.unitCost, 0);
   const pu = await prisma.purchase.create({ data: { ...h, subtotal, total: subtotal + h.tax - h.discount, items: { create: items.map((i) => ({ ...i, subtotal: i.qty * i.unitCost })) } }, include: { items: true } });
@@ -226,14 +226,14 @@ r.post('/purchases/:id/approve', can('SUPERVISOR'), asyncH(async (req, res) => {
 /* ============ Gastos ============ */
 const expenseSchema = z.object({ date: z.coerce.date(), category: z.string(), description: z.string(), amount: z.number().positive(), supplierId: z.string().optional(), payMethod: z.string(), attachmentId: z.string().optional() });
 r.get('/expenses', perm('gastos.gestionar'), asyncH(async (req, res) => res.json(await prisma.expense.findMany({ orderBy: { date: 'desc' }, take: 300, include: { supplier: true } }))));
-r.post('/expenses', validate(expenseSchema), asyncH(async (req, res) => {
+r.post('/expenses', perm('gastos.gestionar'), validate(expenseSchema), asyncH(async (req, res) => {
   const e = await prisma.expense.create({ data: req.body });
   await audit(req, 'expense.create', 'Expense', e.id, null, e);
   res.status(201).json(e);
 }));
 
 /* ============ Archivos y lectura de facturas ============ */
-r.post('/attachments', upload.single('file'), asyncH(async (req, res) => {
+r.post('/attachments', perm(['entradas.crear', 'movimientos.crear', 'gastos.gestionar', 'whatsapp.revisar']), upload.single('file'), asyncH(async (req, res) => {
   if (!req.file) throw new HttpError(422, 'Adjunta un archivo en el campo "file"');
   const { attachment, reused } = await saveAttachment(req.file.buffer, req.file.mimetype, req.body.kind || 'factura');
   let extracted = null;
@@ -245,7 +245,7 @@ r.post('/attachments', upload.single('file'), asyncH(async (req, res) => {
 }));
 
 /* ============ Bandeja WhatsApp ============ */
-r.get('/whatsapp/inbox', asyncH(async (req, res) => res.json(await prisma.inboxItem.findMany({ where: { status: req.query.status }, orderBy: { ts: 'desc' }, take: 200, include: { movements: { include: { product: { select: { name: true } } } }, attachment: true } }))));
+r.get('/whatsapp/inbox', perm('whatsapp.revisar'), asyncH(async (req, res) => res.json(await prisma.inboxItem.findMany({ where: { status: req.query.status }, orderBy: { ts: 'desc' }, take: 200, include: { movements: { include: { product: { select: { name: true } } } }, attachment: true } }))));
 r.post('/whatsapp/inbox/:id/status', can('SUPERVISOR'), validate(z.object({ status: z.enum(['pendiente_analisis', 'pendiente_aprobacion', 'aprobado', 'rechazado', 'duplicado', 'procesado', 'requiere_info']), note: z.string().optional() })), asyncH(async (req, res) => {
   const it = await prisma.inboxItem.update({ where: { id: req.params.id }, data: { status: req.body.status, reviewNote: req.body.note } });
   if (req.body.status === 'aprobado') {
@@ -259,24 +259,24 @@ r.post('/whatsapp/inbox/:id/status', can('SUPERVISOR'), validate(z.object({ stat
   await audit(req, 'whatsapp.status', 'InboxItem', it.id, null, req.body);
   res.json(it);
 }));
-r.get('/whatsapp/chats', asyncH(async (_q, res) => res.json(await prisma.whatsAppChat.findMany())));
+r.get('/whatsapp/chats', perm('whatsapp.revisar'), asyncH(async (_q, res) => res.json(await prisma.whatsAppChat.findMany())));
 r.post('/whatsapp/chats/:id/authorize', can('ADMIN'), validate(z.object({ authorized: z.boolean(), name: z.string().optional() })), asyncH(async (req, res) => {
   res.json(await prisma.whatsAppChat.upsert({ where: { id: req.params.id }, update: req.body, create: { id: req.params.id, name: req.body.name || req.params.id, authorized: req.body.authorized } }));
 }));
 
 /* ============ Google Drive / Sheets ============ */
-r.get('/sheets/files', asyncH(async (req, res) => res.json(await sheets.listFiles(req.query.q))));
-r.get('/sheets/files/:id/tabs', asyncH(async (req, res) => res.json(await sheets.listSheets(req.params.id))));
-r.get('/sheets/files/:id/sample', asyncH(async (req, res) => res.json(await sheets.sampleSheet(req.params.id, req.query.sheet, Number(req.query.headerRow || 1)))));
-r.get('/sheets/sources', asyncH(async (_q, res) => res.json(await prisma.sheetSource.findMany({ include: { runs: { orderBy: { startedAt: 'desc' }, take: 5 } } }))));
+r.get('/sheets/files', perm('sheets.sincronizar'), asyncH(async (req, res) => res.json(await sheets.listFiles(req.query.q))));
+r.get('/sheets/files/:id/tabs', perm('sheets.sincronizar'), asyncH(async (req, res) => res.json(await sheets.listSheets(req.params.id))));
+r.get('/sheets/files/:id/sample', perm('sheets.sincronizar'), asyncH(async (req, res) => res.json(await sheets.sampleSheet(req.params.id, req.query.sheet, Number(req.query.headerRow || 1)))));
+r.get('/sheets/sources', perm('sheets.sincronizar'), asyncH(async (_q, res) => res.json(await prisma.sheetSource.findMany({ include: { runs: { orderBy: { startedAt: 'desc' }, take: 5 } } }))));
 r.post('/sheets/sources', can('ADMIN'), validate(z.object({ name: z.string(), spreadsheetId: z.string(), sheetName: z.string(), kind: z.enum(['productos', 'entradas', 'salidas', 'compras', 'gastos', 'conteos']), headerRow: z.number().default(1), mapping: z.record(z.string().nullable()), keyColumns: z.array(z.string()).default([]), cron: z.string().optional() })), asyncH(async (req, res) => res.status(201).json(await prisma.sheetSource.create({ data: req.body }))));
-r.post('/sheets/sources/:id/preview', asyncH(async (req, res) => res.json(await sheets.previewSync(req.params.id, 'manual'))));
+r.post('/sheets/sources/:id/preview', perm('sheets.sincronizar'), asyncH(async (req, res) => res.json(await sheets.previewSync(req.params.id, 'manual'))));
 r.post('/sheets/apply', can('SUPERVISOR'), validate(z.object({ decisions: z.array(z.object({ importRowId: z.string(), action: z.enum(['crear', 'vincular_existente', 'ignorar']), movementId: z.string().optional(), productId: z.string().optional(), approve: z.boolean().default(false) })) })), asyncH(async (req, res) => {
   const out = await sheets.applySync(req.body.decisions, req.user.sub);
   await audit(req, 'sheets.apply', 'ImportRow', null, null, { n: out.length });
   res.json(out);
 }));
-r.get('/sheets/rows', asyncH(async (req, res) => res.json(await prisma.importRow.findMany({ where: { sourceId: req.query.sourceId, status: req.query.status }, orderBy: { importedAt: 'desc' }, take: 300 }))));
+r.get('/sheets/rows', perm('sheets.sincronizar'), asyncH(async (req, res) => res.json(await prisma.importRow.findMany({ where: { sourceId: req.query.sourceId, status: req.query.status }, orderBy: { importedAt: 'desc' }, take: 300 }))));
 
 /* ============ Conciliación ============ */
 async function runReconciliation(userId) {
@@ -289,16 +289,16 @@ async function runReconciliation(userId) {
   const run = await prisma.reconciliationRun.create({ data: { byUserId: userId, totals: result.totals, rows: result.rows } });
   return { runId: run.id, ...result };
 }
-r.post('/reconciliation/run', asyncH(async (req, res) => {
+r.post('/reconciliation/run', perm('conciliacion.ver'), asyncH(async (req, res) => {
   const out = await runReconciliation(req.user.sub);
   await audit(req, 'reconciliation.run', 'ReconciliationRun', out.runId, null, out.totals);
   res.json(out);
 }));
-r.get('/reconciliation/runs', asyncH(async (_q, res) => res.json(await prisma.reconciliationRun.findMany({ orderBy: { ts: 'desc' }, take: 30, select: { id: true, ts: true, totals: true } }))));
-r.get('/reconciliation/runs/:id', asyncH(async (req, res) => res.json(await prisma.reconciliationRun.findUniqueOrThrow({ where: { id: req.params.id } }))));
+r.get('/reconciliation/runs', perm('conciliacion.ver'), asyncH(async (_q, res) => res.json(await prisma.reconciliationRun.findMany({ orderBy: { ts: 'desc' }, take: 30, select: { id: true, ts: true, totals: true } }))));
+r.get('/reconciliation/runs/:id', perm('conciliacion.ver'), asyncH(async (req, res) => res.json(await prisma.reconciliationRun.findUniqueOrThrow({ where: { id: req.params.id } }))));
 
 /* Botón "ACTUALIZAR Y CONCILIAR INFORMACIÓN": sincroniza todas las fuentes y concilia */
-r.post('/sync-and-reconcile', asyncH(async (req, res) => {
+r.post('/sync-and-reconcile', perm('conciliacion.ver'), asyncH(async (req, res) => {
   const sources = await prisma.sheetSource.findMany({ where: { active: true } });
   const sheetsResult = [];
   for (const s of sources) {
