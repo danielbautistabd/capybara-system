@@ -66,7 +66,7 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Inteligencia | Parcial | Resumen IA por API; plan de reposición calculado en el navegador con los datos cargados |
 | WhatsApp | Parcial | La bandeja se lee de la API; las acciones de estado van a la API. El simulador es solo demo |
 | Drive / Sheets | Parcial | Vista previa y aplicar por API. La configuración de archivo/mapeo en la interfaz es local |
-| Alegra | Parcial | Enviar compras (una o todas) y vincular proveedores van por API. La lista de facturas de proveedor y el vínculo de ítems en la interfaz siguen siendo de ejemplo |
+| Alegra | Parcial | Enviar compras (una o todas), vincular proveedores y vincular ítems ↔ productos (catálogo real de Alegra) van por API. La lista de facturas de proveedor en la interfaz sigue siendo de ejemplo |
 | Solicitudes de compra, órdenes sugeridas | Local | Existen `POST /purchase-requests` y `POST /insights/orders`; falta conectarlos en la interfaz |
 
 ## Siguientes pasos recomendados

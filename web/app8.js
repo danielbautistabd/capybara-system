@@ -273,6 +273,9 @@ remote.load = async () => {
   if (roles?.matrix) S.rolePerms = roles.matrix;
   S.alegra ||= null; S.imports ||= [];
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor
+  if (S.alegra) S.alegra.itemLinks = Object.fromEntries(S.products.filter((p) => p.alegraItemId).map((p) => [p.id, String(p.alegraItemId)]));
+  const itemRows = S.alegra ? await tryGet('/alegra/items/links') : null; // consulta el catálogo de Alegra (solo administradores)
+  if (S.alegra && Array.isArray(itemRows)) S.alegra.items = itemRows.map((r) => ({ id: r.alegraItemId, name: r.alegraName, reference: r.reference || '' }));
 };
 const _newInvoice = newInvoice;
 newInvoice = function () { _newInvoice(); if (S.settings.mode === 'api') { const l = S.billing.lines[S.billing.lines.length - 1]; l.localDraft = true; l.inv = 'BORRADOR-' + Date.now().toString(36).toUpperCase().slice(-4); save(); render(); } };

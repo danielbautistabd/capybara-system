@@ -109,7 +109,14 @@ export async function suggestItemLinks() {
   }
   return out;
 }
-export async function linkItem(productId, alegraItemId) { return prisma.product.update({ where: { id: productId }, data: { alegraItemId: alegraItemId ? String(alegraItemId) : null } }); }
+/** Vincula un ítem de Alegra a un producto. Un ítem pertenece a un solo producto: si otro lo tenía, se le quita. */
+export async function linkItem(productId, alegraItemId) {
+  const item = alegraItemId ? String(alegraItemId) : null;
+  return prisma.$transaction(async (tx) => {
+    if (item) await tx.product.updateMany({ where: { alegraItemId: item, id: { not: productId } }, data: { alegraItemId: null } });
+    return tx.product.update({ where: { id: productId }, data: { alegraItemId: item } });
+  });
+}
 
 /* -------------------- importar facturas de proveedor -------------------- */
 /**

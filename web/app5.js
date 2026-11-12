@@ -373,8 +373,18 @@ BIND.alegra = (el) => {
     if (S.settings.mode === 'api') { remote.req(`/api/v1/suppliers/${i.dataset.sl}`, { method: 'PATCH', body: { alegraId: i.value.trim() || null } }).then(async () => { await remote.load(); render(); toast('Vínculo guardado'); }).catch((e) => toast('No se guardó el vínculo: ' + e.message)); return; }
     S.alegra.supplierLinks[i.dataset.sl] = i.value.trim(); save(); toast('Vínculo guardado');
   }));
-  $$('[data-il]', el).forEach((s) => (s.onchange = () => { for (const [k, v] of Object.entries(S.alegra.itemLinks)) if (v === s.dataset.il) delete S.alegra.itemLinks[k]; if (s.value) S.alegra.itemLinks[s.value] = s.dataset.il; save(); render(); }));
-  $$('[data-ils]', el).forEach((b) => (b.onclick = () => { S.alegra.itemLinks[b.dataset.p] = b.dataset.ils; save(); render(); toast('Ítem vinculado'); }));
+  // Modo API: un ítem de Alegra pertenece a un solo producto (se desvincula el anterior antes de vincular el nuevo)
+  const linkItemApi = async (itemId, productId) => {
+    const prev = Object.entries(S.alegra.itemLinks).filter(([pid, v]) => v === itemId && pid !== productId).map(([pid]) => pid);
+    try {
+      for (const pid of prev) await remote.req('/api/v1/alegra/items/link', { method: 'POST', body: { productId: pid, alegraItemId: null } });
+      if (productId) await remote.req('/api/v1/alegra/items/link', { method: 'POST', body: { productId, alegraItemId: itemId } });
+      await remote.load(); render(); toast(productId ? 'Ítem vinculado' : 'Ítem desvinculado');
+    } catch (e) { toast('No se guardó el vínculo: ' + e.message); remote.load().then(render); }
+  };
+  $$('[data-il]', el).forEach((s) => (s.onchange = () => {
+    if (S.settings.mode === 'api') return linkItemApi(s.dataset.il, s.value || null); for (const [k, v] of Object.entries(S.alegra.itemLinks)) if (v === s.dataset.il) delete S.alegra.itemLinks[k]; if (s.value) S.alegra.itemLinks[s.value] = s.dataset.il; save(); render(); }));
+  $$('[data-ils]', el).forEach((b) => (b.onclick = () => { if (S.settings.mode === 'api') return linkItemApi(b.dataset.ils, b.dataset.p); S.alegra.itemLinks[b.dataset.p] = b.dataset.ils; save(); render(); toast('Ítem vinculado'); }));
   if ($('#al-sync', el)) $('#al-sync', el).onclick = async () => {
     if (S.settings.mode === 'api') { try { const r = await remote.req('/api/v1/alegra/sync', { method: 'POST', body: {} }); toast(`Alegra: ${r.bills.nuevas} nuevas, ${r.bills.vinculadas} vinculadas`); await remote.load(); } catch (e) { toast(e.message); } return; }
     S.alegra.lastSync = new Date().toISOString();
