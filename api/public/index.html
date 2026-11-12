@@ -1590,7 +1590,12 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
 };
-const save = () => { const c = S.settings.cloud?.on, k = typeof cl !== 'undefined' && cl.active; if (S.settings.mode === 'demo' && !c && !k) store.set(LS_KEY, S); store.set(LS_KEY + '-settings', S.settings); if (c) cloud.queue(); if (k) cl.queue(); };
+/** Borrador de factura que aún no existe en el servidor (modo API) */
+const isLocalDraftLine = (l) => !l.invoiceId && (l.localDraft || String(l.inv || '').startsWith('BORRADOR-'));
+const draftsKey = () => `${LS_KEY}-borradores-${S.settings.user || ''}`;
+const save = () => {
+  if (S.settings.mode === 'api' && S.billing?.fromApi) store.set(draftsKey(), S.billing.lines.filter(isLocalDraftLine)); // sobreviven a recargar la página
+  const c = S.settings.cloud?.on, k = typeof cl !== 'undefined' && cl.active; if (S.settings.mode === 'demo' && !c && !k) store.set(LS_KEY, S); store.set(LS_KEY + '-settings', S.settings); if (c) cloud.queue(); if (k) cl.queue(); };
 
 function seedState() {
   const R = rng(20261106);
@@ -4763,8 +4768,10 @@ remote.load = async () => {
   if (rows) {
     const status = {};
     for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId };
-    const drafts = (S.billing?.lines || []).filter((l) => l.localDraft);
-    S.billing = { next: 1, status, lines: [...rows.map((r) => ({ id: r.id, inv: r.inv, invoiceId: r.invoiceId, date: r.date, customer: r.customer, room: r.room || '', productId: r.productId, qty: r.qty, price: r.price, taxPct: r.taxPct, pay: r.pay })), ...drafts], draftPurchases: S.billing?.draftPurchases || [], history: [], historyV: 2 };
+    const mem = (S.billing?.lines || []).filter(isLocalDraftLine);
+    // al abrir la página se recuperan del navegador; después manda lo que hay en memoria (emitir un borrador lo quita)
+    const drafts = S.billing?.fromApi ? mem : store.get(draftsKey(), []).filter(isLocalDraftLine);
+    S.billing = { fromApi: true, next: 1, status, lines: [...rows.map((r) => ({ id: r.id, inv: r.inv, invoiceId: r.invoiceId, date: r.date, customer: r.customer, room: r.room || '', productId: r.productId, qty: r.qty, price: r.price, taxPct: r.taxPct, pay: r.pay })), ...drafts], draftPurchases: S.billing?.draftPurchases || [], history: [], historyV: 2 };
   }
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;

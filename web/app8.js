@@ -266,8 +266,10 @@ remote.load = async () => {
   if (rows) {
     const status = {};
     for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId };
-    const drafts = (S.billing?.lines || []).filter((l) => l.localDraft);
-    S.billing = { next: 1, status, lines: [...rows.map((r) => ({ id: r.id, inv: r.inv, invoiceId: r.invoiceId, date: r.date, customer: r.customer, room: r.room || '', productId: r.productId, qty: r.qty, price: r.price, taxPct: r.taxPct, pay: r.pay })), ...drafts], draftPurchases: S.billing?.draftPurchases || [], history: [], historyV: 2 };
+    const mem = (S.billing?.lines || []).filter(isLocalDraftLine);
+    // al abrir la página se recuperan del navegador; después manda lo que hay en memoria (emitir un borrador lo quita)
+    const drafts = S.billing?.fromApi ? mem : store.get(draftsKey(), []).filter(isLocalDraftLine);
+    S.billing = { fromApi: true, next: 1, status, lines: [...rows.map((r) => ({ id: r.id, inv: r.inv, invoiceId: r.invoiceId, date: r.date, customer: r.customer, room: r.room || '', productId: r.productId, qty: r.qty, price: r.price, taxPct: r.taxPct, pay: r.pay })), ...drafts], draftPurchases: S.billing?.draftPurchases || [], history: [], historyV: 2 };
   }
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;

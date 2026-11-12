@@ -69,7 +69,12 @@ const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sin almacenamiento */ } },
 };
-const save = () => { const c = S.settings.cloud?.on, k = typeof cl !== 'undefined' && cl.active; if (S.settings.mode === 'demo' && !c && !k) store.set(LS_KEY, S); store.set(LS_KEY + '-settings', S.settings); if (c) cloud.queue(); if (k) cl.queue(); };
+/** Borrador de factura que aún no existe en el servidor (modo API) */
+const isLocalDraftLine = (l) => !l.invoiceId && (l.localDraft || String(l.inv || '').startsWith('BORRADOR-'));
+const draftsKey = () => `${LS_KEY}-borradores-${S.settings.user || ''}`;
+const save = () => {
+  if (S.settings.mode === 'api' && S.billing?.fromApi) store.set(draftsKey(), S.billing.lines.filter(isLocalDraftLine)); // sobreviven a recargar la página
+  const c = S.settings.cloud?.on, k = typeof cl !== 'undefined' && cl.active; if (S.settings.mode === 'demo' && !c && !k) store.set(LS_KEY, S); store.set(LS_KEY + '-settings', S.settings); if (c) cloud.queue(); if (k) cl.queue(); };
 
 function seedState() {
   const R = rng(20261106);
