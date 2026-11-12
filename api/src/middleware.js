@@ -42,6 +42,7 @@ export function errorHandler(err, req, res, _next) {
   console.error(err);
   if (err.code === 'P2002') return res.status(409).json({ error: 'Registro duplicado', target: err.meta?.target });
   if (err.code === 'P2025') return res.status(404).json({ error: 'No encontrado' });
+  if (err.name === 'MulterError') return res.status(err.code === 'LIMIT_FILE_SIZE' ? 413 : 400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'El archivo es muy grande (máximo 20 MB para fotos y facturas, 15 MB para Excel)' : `Archivo no válido: ${err.message}` });
   res.status(err.status || 500).json({ error: err.expose ? err.message : 'Error interno' });
 }
 
