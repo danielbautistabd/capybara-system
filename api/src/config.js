@@ -1,5 +1,9 @@
 import 'dotenv/config';
 
+// Hora de Colombia para los cortes del día (caja, tablero, resúmenes). En Vercel la variable TZ está reservada
+// y el servidor corre en UTC, así que se fija aquí; APP_TZ permite cambiarla.
+process.env.TZ = process.env.APP_TZ || 'America/Bogota';
+
 const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
 const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
 
