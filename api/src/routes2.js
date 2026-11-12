@@ -63,7 +63,11 @@ r.post('/purchase-requests', perm('solicitudes.crear'), validate(z.object({ prod
   await audit(req, 'solicitud.crear', 'PurchaseRequest', pr.id, null, pr);
   res.status(201).json(pr);
 }));
-r.get('/purchase-requests', perm('inteligencia.ver'), asyncH(async (req, res) => res.json(await prisma.purchaseRequest.findMany({ where: { status: req.query.status }, orderBy: { ts: 'desc' }, take: 200 }))));
+r.get('/purchase-requests', perm(['inteligencia.ver', 'entradas.aprobar', 'solicitudes.crear']), asyncH(async (req, res) => {
+  const m = await permMap();
+  const todas = hasPerm(req.user.role, 'inteligencia.ver', m) || hasPerm(req.user.role, 'entradas.aprobar', m);
+  res.json(await prisma.purchaseRequest.findMany({ where: { status: req.query.status, ...(todas ? {} : { requestedBy: req.user.name }) }, orderBy: { ts: 'desc' }, take: 200 }));
+}));
 r.post('/purchase-requests/:id/status', perm('entradas.aprobar'), validate(z.object({ status: z.enum(['abierta', 'en_orden', 'atendida', 'rechazada']) })), asyncH(async (req, res) => res.json(await prisma.purchaseRequest.update({ where: { id: req.params.id }, data: { status: req.body.status } }))));
 
 /* ---------- Inteligencia ---------- */

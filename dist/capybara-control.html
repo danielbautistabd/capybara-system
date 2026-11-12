@@ -3638,7 +3638,8 @@ RENDER.miturno = () => {
 const REQ_ST = { abierta: ['Abierta', 'p-warn'], en_orden: ['En orden de compra', 'p-info'], atendida: ['Atendida', 'p-ok'], rechazada: ['Rechazada', 'p-mut'] };
 function requestForm(productId = '') {
   const m = modal({ title: 'Solicitar compra', body: `<div class="field"><label for="rq-p">Producto</label><select class="in" id="rq-p">${prodOptions(productId, (p) => p.kind !== 'activo')}</select></div><div class="grid g2"><div class="field"><label for="rq-q">Cantidad</label><input class="in" type="number" min="1" id="rq-q" value="${prodById(productId)?.packSize || 1}"></div><div class="field"><label for="rq-r">Motivo</label><input class="in" id="rq-r" placeholder="Ej.: evento del sábado"></div></div>`, foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="rq-ok">Enviar solicitud</button>` });
-  m.querySelector('#rq-ok').onclick = () => { const q = +m.querySelector('#rq-q').value; if (!(q > 0)) return toast('Escribe una cantidad.'); S.requests.unshift({ id: uid('sc'), ts: new Date().toISOString(), productId: m.querySelector('#rq-p').value, qty: q, reason: m.querySelector('#rq-r').value, requestedBy: me().name, area: me().area, status: 'abierta' }); log('solicitud.crear', `${prodById(m.querySelector('#rq-p').value)?.name} × ${q}`); closeModal(); save(); render(); toast('Solicitud enviada al administrador'); };
+  m.querySelector('#rq-ok').onclick = () => { const q = +m.querySelector('#rq-q').value; if (!(q > 0)) return toast('Escribe una cantidad.');
+    if (S.settings.mode === 'api') { remote.req('/api/v1/purchase-requests', { method: 'POST', body: { productId: m.querySelector('#rq-p').value, qty: q, reason: m.querySelector('#rq-r').value || undefined } }).then(async () => { closeModal(); await remote.load(); save(); render(); toast('Solicitud enviada'); }).catch((e) => toast('No se envió la solicitud: ' + e.message)); return; } S.requests.unshift({ id: uid('sc'), ts: new Date().toISOString(), productId: m.querySelector('#rq-p').value, qty: q, reason: m.querySelector('#rq-r').value, requestedBy: me().name, area: me().area, status: 'abierta' }); log('solicitud.crear', `${prodById(m.querySelector('#rq-p').value)?.name} × ${q}`); closeModal(); save(); render(); toast('Solicitud enviada al administrador'); };
 }
 BIND.miturno = (el) => {
   const t = $('#mt-text', el);
@@ -3761,7 +3762,17 @@ async function generateSummary(question = '') {
   log('inteligencia.resumen', `${{ day: 'Hoy', week: 'Semana', month: 'Mes' }[IN.period]} · ${by === 'reglas' ? 'reglas' : 'IA'}${question ? ' · ' + question.slice(0, 60) : ''}`);
   IN.busy = false; save(); render();
 }
+/** Modo API: la orden de compra se crea en el servidor (y en Alegra si se pide); las solicitudes abiertas de esos productos pasan a en orden */
+async function createOrderApi(o, { alegra = false } = {}) {
+  try {
+    const r = await remote.req('/api/v1/insights/orders', { method: 'POST', body: { supplierId: o.supplierId, items: o.items.map((i) => ({ productId: i.productId, qty: +i.qty, unit: i.unit, unitCost: +i.unitCost || 0 })), toAlegra: alegra } });
+    for (const q of S.requests.filter((x) => x.status === 'abierta' && o.items.some((i) => i.productId === x.productId))) await remote.req(`/api/v1/purchase-requests/${q.id}/status`, { method: 'POST', body: { status: 'en_orden' } });
+    await remote.load(); save(); render();
+    toast(`Orden ${r.order.invoice} creada${r.alegra?.id ? ` y enviada a Alegra (orden ${r.alegra.id})` : ''}. Al recibir la mercancía, ábrela en Registro de entradas.`);
+  } catch (e) { toast('No se creó la orden: ' + e.message); }
+}
 function createOrder(o, { alegra = false } = {}) {
+  if (S.settings.mode === 'api') return createOrderApi(o, { alegra });
   const po = { id: uid('oc'), kind: 'orden', supplierId: o.supplierId, invoice: 'OC-' + Date.now().toString(36).toUpperCase().slice(-6), purchasedAt: iso(Date.now()), receivedAt: iso(Date.now() + (supById(o.supplierId)?.leadDays || 2) * DAY), items: o.items.map((i) => ({ productId: i.productId, qty: i.qty, unit: i.unit, unitCost: i.unitCost, subtotal: i.subtotal })), subtotal: o.total, tax: 0, discount: 0, total: o.total, payMethod: 'Crédito proveedor', receivedBy: '—', status: 'borrador', source: 'sistema', notes: 'Orden sugerida por punto de reorden' };
   if (alegra) { po.alegraPO = String(5000 + Math.floor(Math.random() * 900)); S.alegra.log.unshift({ ts: new Date().toISOString(), action: 'orden.crear', status: 'ok', detail: `${o.supplierName}: ${o.items.length} ítems → Alegra OC ${po.alegraPO} (simulado)` }); }
   S.purchases.push(po);
@@ -3783,7 +3794,8 @@ BIND.inteligencia = (el) => {
   $$('[data-poa]', el).forEach((b) => (b.onclick = () => createOrder(ins.orders[+b.dataset.poa], { alegra: true })));
   $$('[data-pow]', el).forEach((b) => (b.onclick = () => { const o = ins.orders[+b.dataset.pow]; const txt = `Hola, ${o.supplierName}. Pedido de Capybara Hostel:\n${o.items.map((i) => `• ${i.qty} ${i.unit} ${i.name}`).join('\n')}\nGracias.`; navigator.clipboard.writeText(txt).then(() => toast('Pedido copiado: pégalo en WhatsApp del proveedor'), () => modal({ title: 'Pedido para WhatsApp', body: `<textarea class="in" rows="8" readonly>${esc(txt)}</textarea>` })); }));
   $$('[data-rqa]', el).forEach((b) => (b.onclick = () => { const r = S.requests.find((x) => x.id === b.dataset.rqa); const p = prodById(r.productId); const o = { supplierId: p.supplierId, supplierName: supById(p.supplierId)?.name || 'Sin proveedor', items: [{ productId: p.id, name: p.name, qty: r.qty, unit: p.unit, unitCost: p.lastPrice || p.avgCost, subtotal: r.qty * (p.lastPrice || p.avgCost) }], total: r.qty * (p.lastPrice || p.avgCost) }; createOrder(o); }));
-  $$('[data-rqr]', el).forEach((b) => (b.onclick = () => { S.requests.find((x) => x.id === b.dataset.rqr).status = 'rechazada'; log('solicitud.rechazar', b.dataset.rqr); save(); render(); }));
+  $$('[data-rqr]', el).forEach((b) => (b.onclick = () => {
+    if (S.settings.mode === 'api') { remote.req(`/api/v1/purchase-requests/${b.dataset.rqr}/status`, { method: 'POST', body: { status: 'rechazada' } }).then(async () => { await remote.load(); render(); toast('Solicitud rechazada'); }).catch((e) => toast('No se pudo rechazar: ' + e.message)); return; } S.requests.find((x) => x.id === b.dataset.rqr).status = 'rechazada'; log('solicitud.rechazar', b.dataset.rqr); save(); render(); }));
 };
 
 /* ---------------- Alegra ---------------- */
@@ -4747,6 +4759,8 @@ remote.load = async () => {
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;
   S.alegra ||= null; S.imports ||= [];
+  const reqs = await tryGet('/purchase-requests');
+  if (Array.isArray(reqs)) S.requests = reqs.map((r) => ({ ...r, qty: +r.qty }));
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor
   if (S.alegra) S.alegra.itemLinks = Object.fromEntries(S.products.filter((p) => p.alegraItemId).map((p) => [p.id, String(p.alegraItemId)]));
   const itemRows = S.alegra ? await tryGet('/alegra/items/links') : null; // consulta el catálogo de Alegra (solo administradores)

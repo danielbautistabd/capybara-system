@@ -272,6 +272,8 @@ remote.load = async () => {
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;
   S.alegra ||= null; S.imports ||= [];
+  const reqs = await tryGet('/purchase-requests');
+  if (Array.isArray(reqs)) S.requests = reqs.map((r) => ({ ...r, qty: +r.qty }));
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor
   if (S.alegra) S.alegra.itemLinks = Object.fromEntries(S.products.filter((p) => p.alegraItemId).map((p) => [p.id, String(p.alegraItemId)]));
   const itemRows = S.alegra ? await tryGet('/alegra/items/links') : null; // consulta el catálogo de Alegra (solo administradores)
