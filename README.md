@@ -64,13 +64,16 @@ Hoja de ruta completa: https://claude.ai/artifact/UR6T32L9NRUadzzMkGXCbH
 
 **Ya hecho en Supabase (proyecto capybara-control):** las 25 tablas del backend (migraciones de `api/prisma/migrations`), RLS en todas (solo el API las lee) y el catálogo (13 categorías, 6 proveedores, 85 productos). Sin usuarios todavía.
 
+**Proyecto en Vercel:** `capybara-system` (equipo capybara-system), framework **Express**, **Root Directory `api`**, Node 22. Vercel toma `api/index.js` como la app y sirve `api/public` (la interfaz). Cada push a `main` despliega.
+
 **Variables del servidor (Vercel › Settings › Environment Variables):**
 
 | Variable | Valor |
 | --- | --- |
 | `DATABASE_URL` | Supabase › Connect › *Transaction pooler* (puerto 6543), agregando `?pgbouncer=true&connection_limit=1` |
 | `DIRECT_URL` | Supabase › Connect › *Session pooler* (puerto 5432), solo para migraciones |
-| `JWT_SECRET` | Cadena larga y aleatoria |
+| `JWT_SECRET` | Cadena larga y aleatoria (tipo *Sensitive*) |
+| `TZ` | No se usa: Vercel la reserva. La hora de Colombia la fija `config.js` (`APP_TZ` para cambiarla) |
 | `STORAGE_DRIVER` / `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_BUCKET` | `supabase` / `https://ghedaeyshfvlvvkafbyd.supabase.co` / clave *service_role* (solo aquí) / `evidencias` (bucket **privado**) |
 | `CRON_SECRET` | Cadena larga y aleatoria; la misma va en Vault (ver `supabase/cron.sql`) |
 | Alegra, WhatsApp, Google | Como en `api/.env.example` |
