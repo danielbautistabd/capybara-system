@@ -3957,7 +3957,7 @@ RENDER.acceso = () => {
   const act30 = (u) => { const ms = S.movements.filter((m) => m.user === u.name && new Date(m.ts) >= since); const c = (s) => ms.filter((m) => m.status === s).length; return { t: ms.length, a: c('aprobado'), p: c('pendiente') + c('requiere_info'), r: c('rechazado'), d: c('duplicado') }; };
   const roles = Object.keys(ROLES);
   return `
-  <div class="row"><span class="muted small">${S.users.filter((u) => u.active).length} usuarios activos</span><span class="spacer"></span><button class="btn pri" id="ac-new">${ic('plus')} Nuevo usuario</button></div>
+  <div class="row"><span class="muted small">${S.users.filter((u) => u.active).length} usuarios activos</span><span class="spacer"></span>${S.settings.mode === 'api' ? `<button class="btn" id="ac-team">${ic('plus')} Crear cuentas del equipo</button>` : ''}<button class="btn pri" id="ac-new">${ic('plus')} Nuevo usuario</button></div>
   <div class="tbl-wrap"><table><thead><tr><th>Usuario</th><th>Rol</th><th>Área</th><th>WhatsApp</th><th class="n">Registros 30 d</th><th class="n">Aprobados</th><th class="n">Pendientes</th><th class="n">Rechazados</th><th>Estado</th><th></th></tr></thead><tbody>
   ${S.users.map((u) => { const a = act30(u); return `<tr><td><b>${esc(u.name)}</b><span class="sub">${esc(u.email || '')}</span></td><td>${pill(ROLES[u.role], ROLE_PILL[u.role])}</td><td class="small">${esc([u.area, ...(u.areas || [])].filter(Boolean).join(', '))}</td><td class="mono small">${u.phone ? '+' + esc(u.phone) : '—'}</td><td class="n num">${a.t}</td><td class="n num">${a.a}</td><td class="n num">${a.p}</td><td class="n num ${a.r ? 'neg' : ''}">${a.r}</td><td>${u.active ? pill('Activo', 'p-ok') : pill('Inactivo', 'p-mut')}</td><td><div class="actions" style="flex-wrap:nowrap"><button class="btn sm" data-ue="${u.id}">${ic('edit')}</button>${u.active && u.name !== me().name ? `<button class="btn sm" data-uv="${u.id}" title="Ver la app como este usuario">Ver como</button>` : ''}</div></td></tr>`; }).join('')}
   </tbody></table></div>
@@ -3981,7 +3981,7 @@ function userForm(u = null) {
     <div class="grid g3"><div class="field"><label for="uf-role">Rol</label><select class="in" id="uf-role">${Object.entries(ROLES).map(([k, l]) => opt(k, l, u.role)).join('')}</select></div><div class="field"><label for="uf-area">Área principal</label><select class="in" id="uf-area">${['Administración', ...AREAS].map((a) => opt(a, a, u.area)).join('')}</select></div><div class="field"><label for="uf-phone">WhatsApp (57…)</label><input class="in mono" id="uf-phone" value="${esc(u.phone || '')}" placeholder="573001112233"></div></div>
     <div class="field"><label>Áreas adicionales</label><div class="row">${AREAS.map((a) => `<label class="small row" style="gap:4px"><input type="checkbox" data-ua="${a}" ${(u.areas || []).includes(a) ? 'checked' : ''}>${a}</label>`).join('')}</div></div>
     ${S.settings.mode === 'api' ? `<div class="field"><label for="uf-pw">${isNew ? 'Contraseña temporal (mínimo 8 caracteres; la persona crea la suya al entrar)' : u?.name === me().name ? 'Nueva contraseña (déjala vacía para no cambiarla)' : 'Contraseña temporal nueva (déjala vacía para no cambiarla; cierra sus sesiones y crea la suya al entrar)'}</label><input class="in" id="uf-pw" type="password" autocomplete="new-password"></div>` : ''}
-    ${!isNew ? `<label class="row small"><input type="checkbox" id="uf-active" ${u.active ? 'checked' : ''}> Usuario activo</label>` : `<p class="muted small" style="margin:0">${S.settings.mode === 'api' ? 'Entrégale la contraseña en persona; podrá cambiarla con un administrador.' : 'Con el backend conectado se le asigna una contraseña.'} Su número de WhatsApp queda autorizado para reportar.</p>`}`,
+    ${!isNew ? `<label class="row small"><input type="checkbox" id="uf-active" ${u.active ? 'checked' : ''}> Usuario activo</label>` : `<p class="muted small" style="margin:0">${S.settings.mode === 'api' ? 'Entrégale la contraseña en persona; al entrar creará la suya.' : 'Con el backend conectado se le asigna una contraseña.'} Su número de WhatsApp queda autorizado para reportar.</p>`}`,
     foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="uf-ok">${ic('check')} Guardar</button>` });
   m.querySelector('#uf-ok').onclick = () => {
     const g = (k) => m.querySelector('#uf-' + k).value.trim();
@@ -4004,8 +4004,92 @@ function userForm(u = null) {
     log(isNew ? 'usuario.crear' : 'usuario.editar', `${o.name} · ${ROLES[o.role]}`); closeModal(); save(); render(); toast('Usuario guardado');
   };
 }
+/* ---------- crear las cuentas del equipo en bloque (modo API) ----------
+ * Cada persona recibe una contraseña temporal generada en este navegador; el servidor solo guarda su huella y la marca
+ * como temporal, así que al primer ingreso cada quien crea la suya. La lista con las temporales solo se muestra una vez. */
+const TEAM_ROLE = Object.fromEntries(Object.entries(ROLES).flatMap(([k, l]) => [[k.toLowerCase(), k], [l.toLowerCase(), k]]).concat([['supervisor', 'SUPERVISOR'], ['admin', 'ADMIN']]));
+const normTxt = (s) => String(s || '').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+function tempPassword() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'; // sin 0/O, 1/l/I para dictarla sin confusiones
+  const r = new Uint32Array(10); crypto.getRandomValues(r);
+  return Array.from(r, (x) => abc[x % abc.length]).join('');
+}
+function parseTeam(text) {
+  const known = new Set((S.users || []).map((u) => normTxt(u.email)));
+  const areaOf = (a) => [...AREAS, 'Administración'].find((x) => normTxt(x) === normTxt(a));
+  const seen = new Set();
+  return text.split('\n').map((l) => l.trim()).filter(Boolean).map((line, i) => {
+    const [name = '', email = '', role = '', area = ''] = (/[;\t]/.test(line) ? line.split(/[;\t]/) : line.split(',')).map((x) => x.trim());
+    const o = { line: i + 1, name, email: email.toLowerCase(), role: TEAM_ROLE[normTxt(role)] || (role ? null : 'EMPLEADO'), area: area ? areaOf(area) : null, errors: [] };
+    if (name.length < 2) o.errors.push('falta el nombre');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(o.email)) o.errors.push('correo no válido');
+    else if (seen.has(o.email)) o.errors.push('correo repetido en la lista');
+    if (!o.role) o.errors.push(`rol "${role}" no existe`);
+    if (o.role === 'ADMIN') o.errors.push('los administradores se crean uno a uno');
+    if (area && !o.area) o.errors.push(`área "${area}" no existe`);
+    o.exists = known.has(o.email);
+    seen.add(o.email);
+    return o;
+  });
+}
+function teamModal() {
+  const m = modal({ title: 'Crear cuentas del equipo', wide: true, body: `
+    <p class="small" style="margin:0 0 8px">Una persona por línea: <b>nombre; correo; rol; área</b>. Roles: ${Object.values(ROLES).filter((r) => r !== 'Administrador').join(', ')}. El área es opcional (${AREAS.join(', ')}).</p>
+    <textarea class="in mono" id="tm-txt" rows="7" placeholder="Laura Gómez; laura@capybarahostel.com; Cajero; Recepción&#10;Andrés Ruiz; andres@capybarahostel.com; Empleado; Bar"></textarea>
+    <label class="row small" style="margin-top:8px"><input type="checkbox" id="tm-reset"> Si el correo ya tiene cuenta, darle una contraseña temporal nueva (cierra sus sesiones)</label>
+    <div id="tm-prev" style="margin-top:10px"></div>`,
+    foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="tm-ok" disabled>Crear cuentas</button>` });
+  let rows = [];
+  const prev = () => {
+    rows = parseTeam(m.querySelector('#tm-txt').value);
+    const reset = m.querySelector('#tm-reset').checked;
+    const todo = rows.filter((r) => !r.errors.length && (!r.exists || reset));
+    m.querySelector('#tm-prev').innerHTML = rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Nombre</th><th>Correo</th><th>Rol</th><th>Área</th><th>Qué pasará</th></tr></thead><tbody>${rows.map((r) => `<tr><td class="muted">${r.line}</td><td>${esc(r.name)}</td><td class="mono small">${esc(r.email)}</td><td>${r.role ? esc(ROLES[r.role]) : '—'}</td><td>${esc(r.area || '—')}</td><td>${r.errors.length ? pill(r.errors.join('; '), 'p-bad') : r.exists ? (reset ? pill('Ya existe: contraseña temporal nueva', 'p-warn') : pill('Ya existe: se omite', 'p-mut')) : pill('Cuenta nueva', 'p-ok')}</td></tr>`).join('')}</tbody></table></div>` : '';
+    const ok = m.querySelector('#tm-ok'); ok.disabled = !todo.length; ok.textContent = todo.length ? `Crear ${todo.length} ${todo.length === 1 ? 'cuenta' : 'cuentas'}` : 'Crear cuentas';
+  };
+  m.querySelector('#tm-txt').oninput = prev; m.querySelector('#tm-reset').onchange = prev;
+  m.querySelector('#tm-ok').onclick = async () => {
+    const reset = m.querySelector('#tm-reset').checked;
+    const todo = rows.filter((r) => !r.errors.length && (!r.exists || reset));
+    m.querySelector('#tm-ok').disabled = true;
+    const out = [];
+    for (const r of todo) {
+      const password = tempPassword();
+      try {
+        if (r.exists) { const u = S.users.find((x) => normTxt(x.email) === r.email); await remote.req(`/api/v1/users/${u.id}`, { method: 'PATCH', body: { password } }); }
+        else await remote.req('/api/v1/users', { method: 'POST', body: { name: r.name, email: r.email, role: r.role, area: r.area, areas: [], active: true, password } });
+        out.push({ ...r, password, ok: true });
+      } catch (e) { out.push({ ...r, ok: false, error: e.message }); }
+    }
+    await remote.load().catch(() => {}); save(); render();
+    teamResult(out);
+  };
+}
+function teamResult(out) {
+  const done = out.filter((r) => r.ok);
+  const m = modal({ title: 'Lista de contraseñas temporales', wide: true, body: `
+    <p class="small" style="margin:0 0 8px"><b>Esta lista solo se muestra ahora:</b> las contraseñas no quedan guardadas en ningún lado. Imprímela o descárgala, entrégale a cada persona la suya en persona y luego destrúyela. Al entrar, cada quien crea su propia contraseña.</p>
+    <div class="tbl-wrap"><table><thead><tr><th>Nombre</th><th>Correo (usuario)</th><th>Rol</th><th>Contraseña temporal</th><th>Estado</th></tr></thead><tbody>
+    ${out.map((r) => `<tr><td>${esc(r.name)}</td><td class="mono small">${esc(r.email)}</td><td>${esc(ROLES[r.role] || '')}</td><td class="mono"><b>${r.ok ? esc(r.password) : '—'}</b></td><td>${r.ok ? pill(r.exists ? 'Reiniciada' : 'Creada', 'p-ok') : pill(r.error, 'p-bad')}</td></tr>`).join('')}
+    </tbody></table></div>`,
+    foot: `<button class="btn" id="tr-csv"${done.length ? '' : ' disabled'}>Descargar lista</button><button class="btn" id="tr-print"${done.length ? '' : ' disabled'}>Imprimir para recortar</button><button class="btn pri" data-close>Listo, ya la entregué</button>` });
+  const url = location.origin + location.pathname;
+  m.querySelector('#tr-csv').onclick = async () => {
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '﻿' + [['Nombre', 'Correo (usuario)', 'Rol', 'Área', 'Contraseña temporal', 'Dirección'], ...done.map((r) => [r.name, r.email, ROLES[r.role], r.area || '', r.password, url])].map((l) => l.map(q).join(';')).join('\r\n');
+    const d = await getDownloads(); if (!d) return toast('Este navegador no permite descargar; usa Imprimir.');
+    d.save({ filename: `contrasenas-temporales-${new Date().toISOString().slice(0, 10)}.csv`, data: csv });
+  };
+  m.querySelector('#tr-print').onclick = () => {
+    const w = window.open('', '_blank'); if (!w) return toast('El navegador bloqueó la ventana de impresión; permite ventanas emergentes.');
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>Contraseñas temporales</title><style>body{font:14px system-ui,sans-serif;margin:16px}.slip{border:1px dashed #888;border-radius:8px;padding:12px 14px;margin:0 0 12px;break-inside:avoid}.pw{font:600 18px ui-monospace,monospace;letter-spacing:1px}small{color:#555}</style>${done.map((r) => `<div class="slip"><b>${esc(r.name)}</b> · ${esc(ROLES[r.role])}<br>Entra en: ${esc(url)}<br>Usuario: <b>${esc(r.email)}</b><br>Contraseña temporal: <span class="pw">${esc(r.password)}</span><br><small>Al entrar te pedirá crear tu propia contraseña. No la compartas.</small></div>`).join('')}<script>print()<\/script>`);
+    w.document.close();
+  };
+}
+
 BIND.acceso = (el) => {
   $('#ac-new', el).onclick = () => userForm();
+  if ($('#ac-team', el)) $('#ac-team', el).onclick = teamModal;
   $$('[data-ue]', el).forEach((b) => (b.onclick = () => userForm(S.users.find((u) => u.id === b.dataset.ue))));
   $$('[data-uv]', el).forEach((b) => (b.onclick = () => { S.settings.user = S.users.find((u) => u.id === b.dataset.uv).name; save(); toast(`Viendo como ${me().name}. Cambia de usuario en el menú lateral.`); location.hash = homeView(); render(); }));
   $$('[data-pm]', el).forEach((c) => (c.onchange = () => { const [r, k] = c.dataset.pm.split('|'); const set = new Set(S.rolePerms[r] || []); c.checked ? set.add(k) : set.delete(k); S.rolePerms[r] = [...set]; if (S.settings.mode === 'api') remote.req(`/api/v1/roles/${r}`, { method: 'PUT', body: { perms: S.rolePerms[r] } }).then(() => toast(`Permisos de ${ROLES[r]} guardados`)).catch((e) => { toast('No se guardaron los permisos: ' + e.message); remote.load().then(render); }); log('rol.permisos', `${ROLES[r]}: ${c.checked ? '+' : '−'} ${k}`); save(); renderNav(); }));
