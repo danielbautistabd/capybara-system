@@ -208,6 +208,11 @@ r.post('/marchados', perm('movimientos.crear'), validate(z.object({ text: z.stri
 }));
 
 /* ============ Conteos físicos ============ */
+/** Último conteo físico de cada producto (el corte que usa la conciliación). Son cantidades, sin valores en pesos. */
+r.get('/counts', perm(['inventario.ver', 'conteos.crear', 'conciliacion.ver']), asyncH(async (_q, res) => {
+  const rows = await prisma.$queryRaw`SELECT DISTINCT ON ("productId") id, "productId", qty, ts, "countedBy", "sessionId", notes FROM "PhysicalCount" ORDER BY "productId", ts DESC`;
+  res.json(rows.map((c) => ({ ...c, qty: n(c.qty) })));
+}));
 r.post('/counts', perm('conteos.crear'), validate(z.object({ items: z.array(z.object({ productId: z.string(), qty: z.number().min(0) })), notes: z.string().optional() })), asyncH(async (req, res) => {
   const sessionId = `CF-${Date.now()}`;
   const rows = await prisma.$transaction(req.body.items.map((i) => prisma.physicalCount.create({ data: { ...i, countedBy: req.user.name, sessionId, notes: req.body.notes } })));

@@ -2777,7 +2777,14 @@ RENDER.conciliacion = () => {
   <p class="muted small" style="margin:0">Diferencia menor: hasta ±1 unidad o 5 % del teórico. Movimiento duplicado: dos registros del mismo hecho desde fuentes distintas. Sin respaldo: salidas reportadas por WhatsApp aprobadas sin evidencia. Solo cuentan movimientos aprobados hasta la hora del conteo.</p>`;
 };
 BIND.conciliacion = (el) => {
-  $('#rc-run', el).onclick = () => { runRecon(); save(); render(); toast('Conciliación actualizada'); };
+  $('#rc-run', el).onclick = async () => {
+    if (S.settings.mode === 'api') {
+      try { await remote.load(); const r = await remote.req('/api/v1/reconciliation/run', { method: 'POST' }); runRecon(); S.recon = { ...S.recon, ts: new Date().toISOString(), runId: r.runId }; save(); render(); toast('Conciliación actualizada y guardada en el historial'); }
+      catch (e) { toast('No se pudo conciliar: ' + e.message); }
+      return;
+    }
+    runRecon(); save(); render(); toast('Conciliación actualizada');
+  };
   $$('[data-rs]', el).forEach((b) => (b.onclick = () => { RC.st = b.dataset.rs; render(); }));
   $$('[data-kx]', el).forEach((b) => (b.onclick = () => kardex(b.dataset.kx)));
   $$('[data-newp]', el).forEach((b) => (b.onclick = () => productForm(null)));
@@ -4865,6 +4872,10 @@ remote.load = async () => {
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;
   S.alegra ||= null; S.imports ||= [];
+  // Conteos físicos reales: la conciliación del navegador (tablero, Conciliación, Inteligencia) usa el mismo corte que el servidor.
+  const counts = await tryGet('/counts');
+  S.counts = Array.isArray(counts) ? counts.map((c) => ({ ...c, qty: +c.qty })) : [];
+  S.recon = null;
   const reqs = await tryGet('/purchase-requests');
   if (Array.isArray(reqs)) S.requests = reqs.map((r) => ({ ...r, qty: +r.qty }));
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor

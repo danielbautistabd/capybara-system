@@ -66,7 +66,7 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Caja del día | Sí | Con las facturas cargadas. También existe `GET /cash/today` |
 | Control de acceso | Sí | Crear y editar usuarios con contraseña (`POST/PATCH /users`) y guardar la matriz de permisos (`PUT /roles/:role`) |
 | Conteos físicos | Sí | `POST /counts` |
-| Conciliación | Parcial | La interfaz concilia con lo cargado; el botón principal llama a `POST /sync-and-reconcile` |
+| Conciliación | Sí | Los conteos físicos vienen del servidor (`GET /counts`, último por producto), así que tablero, Conciliación e Inteligencia usan el mismo corte que el servidor. "Volver a conciliar" llama a `POST /reconciliation/run` (queda en el historial); el botón principal llama a `POST /sync-and-reconcile` |
 | Inteligencia | Parcial | Resumen IA por API; plan de reposición calculado en el navegador con los datos cargados |
 | WhatsApp | Parcial | La bandeja se lee de la API; las acciones de estado van a la API. El simulador es solo demo |
 | Drive / Sheets | Parcial | Vista previa y aplicar por API. La configuración de archivo/mapeo en la interfaz es local |

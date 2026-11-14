@@ -274,6 +274,10 @@ remote.load = async () => {
   if (users) S.users = users.map((u) => ({ ...u, areas: u.areas || [] }));
   if (roles?.matrix) S.rolePerms = roles.matrix;
   S.alegra ||= null; S.imports ||= [];
+  // Conteos físicos reales: la conciliación del navegador (tablero, Conciliación, Inteligencia) usa el mismo corte que el servidor.
+  const counts = await tryGet('/counts');
+  S.counts = Array.isArray(counts) ? counts.map((c) => ({ ...c, qty: +c.qty })) : [];
+  S.recon = null;
   const reqs = await tryGet('/purchase-requests');
   if (Array.isArray(reqs)) S.requests = reqs.map((r) => ({ ...r, qty: +r.qty }));
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor
