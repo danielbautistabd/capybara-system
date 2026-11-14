@@ -33,6 +33,11 @@ export function dbUrlProblem(v) {
   return null;
 }
 for (const k of ['DATABASE_URL', 'DIRECT_URL']) if (process.env[k] !== undefined) process.env[k] = cleanDbUrl(k, process.env[k]);
+// Integración Supabase ↔ Vercel: crea POSTGRES_PRISMA_URL (pooler) y POSTGRES_URL_NON_POOLING (directa).
+// Se usan si DATABASE_URL / DIRECT_URL faltan o no son una dirección válida.
+const okUrl = (v) => !!v && /^postgres(ql)?:\/\//.test(v);
+if (!okUrl(process.env.DATABASE_URL) && okUrl(process.env.POSTGRES_PRISMA_URL)) process.env.DATABASE_URL = process.env.POSTGRES_PRISMA_URL;
+if (!okUrl(process.env.DIRECT_URL) && okUrl(process.env.POSTGRES_URL_NON_POOLING)) process.env.DIRECT_URL = process.env.POSTGRES_URL_NON_POOLING;
 
 const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
 const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
