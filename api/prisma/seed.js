@@ -39,7 +39,8 @@ async function main() {
   await prisma.user.upsert({
     where: { email: 'admin@capybarahostel.com' },
     update: {},
-    create: { name: 'Administrador', email: 'admin@capybarahostel.com', passwordHash: await bcrypt.hash(adminPw, 10), role: 'ADMIN' },
+    // La contraseña de la semilla es temporal: se pide cambiarla al primer ingreso (SEED_TEMP_PASSWORDS=false solo en desarrollo).
+    create: { name: 'Administrador', email: 'admin@capybarahostel.com', passwordHash: await bcrypt.hash(adminPw, 10), role: 'ADMIN', mustChangePassword: process.env.SEED_TEMP_PASSWORDS !== 'false' },
   });
   if (created && !process.env.SEED_ADMIN_PASSWORD) console.log(`Administrador creado: admin@capybarahostel.com / ${adminPw}  (cámbiala al entrar)`);
   // personal de ejemplo: solo en desarrollo (SEED_DEMO_USERS=true), con SEED_STAFF_PASSWORD
@@ -52,7 +53,7 @@ async function main() {
     ['Camila Rojas', 'bar@capybarahostel.com', 'EMPLEADO', 'Bar', '573001112233'],
     ['Luz Marina', 'housekeeping@capybarahostel.com', 'EMPLEADO', 'Limpieza', '573004445566'],
     ['Jhon Fredy', 'cocina@capybarahostel.com', 'EMPLEADO', 'Cocina', '573205556677'],
-  ]) await prisma.user.upsert({ where: { email }, update: {}, create: { name, email, role, area, phone, passwordHash: await bcrypt.hash(process.env.SEED_STAFF_PASSWORD || crypto.randomBytes(9).toString('base64url'), 10) } });
+  ]) await prisma.user.upsert({ where: { email }, update: {}, create: { name, email, role, area, phone, mustChangePassword: process.env.SEED_TEMP_PASSWORDS !== 'false', passwordHash: await bcrypt.hash(process.env.SEED_STAFF_PASSWORD || crypto.randomBytes(9).toString('base64url'), 10) } });
   console.log(`Semilla lista: ${CATEGORIES.length} categorías, ${SUPPLIERS.length} proveedores, ${PRODUCTS.length} productos.`);
 }
 

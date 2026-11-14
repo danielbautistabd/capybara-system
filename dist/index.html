@@ -1957,6 +1957,7 @@ const remote = {
     const data = await r.json().catch(() => ({}));
     // Sesión vencida (dura 12 horas): pedir entrar de nuevo en lugar de dejar la pantalla con errores. Los borradores siguen guardados.
     if (r.status === 401 && S.settings.token && !path.startsWith('/api/v1/auth/')) { S.settings.token = null; save(); if (typeof loginModal === 'function') { loginModal(); toast('Tu sesión venció. Vuelve a iniciar sesión.'); } throw new Error('Tu sesión venció. Vuelve a iniciar sesión.'); }
+    if (r.status === 403 && data.code === 'cambiar_contrasena' && typeof changePasswordModal === 'function' && !$('#pw-ok')) { closeModal(); S.settings.token = null; save(); loginModal(); toast('Entra de nuevo para crear tu contraseña.'); }
     if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
     return data;
   },
@@ -3987,7 +3988,7 @@ function userForm(u = null) {
     <div class="grid g2"><div class="field"><label for="uf-name">Nombre</label><input class="in" id="uf-name" value="${esc(u.name)}"></div><div class="field"><label for="uf-email">Correo (inicio de sesión)</label><input class="in" id="uf-email" type="email" value="${esc(u.email || '')}"></div></div>
     <div class="grid g3"><div class="field"><label for="uf-role">Rol</label><select class="in" id="uf-role">${Object.entries(ROLES).map(([k, l]) => opt(k, l, u.role)).join('')}</select></div><div class="field"><label for="uf-area">Área principal</label><select class="in" id="uf-area">${['Administración', ...AREAS].map((a) => opt(a, a, u.area)).join('')}</select></div><div class="field"><label for="uf-phone">WhatsApp (57…)</label><input class="in mono" id="uf-phone" value="${esc(u.phone || '')}" placeholder="573001112233"></div></div>
     <div class="field"><label>Áreas adicionales</label><div class="row">${AREAS.map((a) => `<label class="small row" style="gap:4px"><input type="checkbox" data-ua="${a}" ${(u.areas || []).includes(a) ? 'checked' : ''}>${a}</label>`).join('')}</div></div>
-    ${S.settings.mode === 'api' ? `<div class="field"><label for="uf-pw">${isNew ? 'Contraseña inicial (mínimo 8 caracteres)' : 'Nueva contraseña (déjala vacía para no cambiarla)'}</label><input class="in" id="uf-pw" type="password" autocomplete="new-password"></div>` : ''}
+    ${S.settings.mode === 'api' ? `<div class="field"><label for="uf-pw">${isNew ? 'Contraseña temporal (mínimo 8 caracteres; la persona crea la suya al entrar)' : u?.name === me().name ? 'Nueva contraseña (déjala vacía para no cambiarla)' : 'Contraseña temporal nueva (déjala vacía para no cambiarla; cierra sus sesiones y crea la suya al entrar)'}</label><input class="in" id="uf-pw" type="password" autocomplete="new-password"></div>` : ''}
     ${!isNew ? `<label class="row small"><input type="checkbox" id="uf-active" ${u.active ? 'checked' : ''}> Usuario activo</label>` : `<p class="muted small" style="margin:0">${S.settings.mode === 'api' ? 'Entrégale la contraseña en persona; podrá cambiarla con un administrador.' : 'Con el backend conectado se le asigna una contraseña.'} Su número de WhatsApp queda autorizado para reportar.</p>`}`,
     foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="uf-ok">${ic('check')} Guardar</button>` });
   m.querySelector('#uf-ok').onclick = () => {
@@ -4815,8 +4816,13 @@ function loginModal() {
   const go = async () => {
     const email = m.querySelector('#lg-email').value.trim(), pw = m.querySelector('#lg-pw').value;
     if (!email || !pw) return toast('Escribe tu correo y contraseña.');
-    try { const d = await remote.login(email, pw); S.settings.lastEmail = email; await remote.load(); S.settings.mode = 'api'; S.recon = null; if (!S.users.some((u) => u.name === d.user.name)) S.users.push({ id: d.user.id, name: d.user.name, role: d.user.role, area: d.user.area || '', areas: [], email, active: true }); S.settings.user = d.user.name; save(); closeModal(); location.hash = homeView(); render(); toast(`Hola, ${d.user.name}`); }
-    catch (e) { m.querySelector('#lg-msg').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+    const enter = async (d) => { await remote.load(); S.settings.mode = 'api'; S.recon = null; if (!S.users.some((u) => u.name === d.user.name)) S.users.push({ id: d.user.id, name: d.user.name, role: d.user.role, area: d.user.area || '', areas: [], email, active: true }); S.settings.user = d.user.name; save(); closeModal(); location.hash = homeView(); render(); toast(`Hola, ${d.user.name}`); };
+    try {
+      const d = await remote.login(email, pw); S.settings.lastEmail = email;
+      // Contraseña temporal: primero crea la suya (el servidor entrega un token nuevo) y luego entra.
+      if (d.user.mustChangePassword) return changePasswordModal({ forced: true, current: pw, onDone: () => enter(d).catch((e) => toast('No se pudo cargar: ' + e.message)) });
+      await enter(d);
+    } catch (e) { m.querySelector('#lg-msg').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
   };
   m.querySelector('#lg-ok').onclick = go;
   m.querySelector('#lg-pw').onkeydown = (e) => e.key === 'Enter' && go();
@@ -4830,23 +4836,29 @@ function accountActions() {
   const on = S.settings.mode === 'api' && !!S.settings.token;
   box.innerHTML = on ? `<button class="btn ghost sm" id="me-pw">Cambiar mi contraseña</button><button class="btn ghost sm" id="me-out">Salir</button>` : '';
   if (!on) return;
-  box.querySelector('#me-pw').onclick = changePasswordModal;
+  box.querySelector('#me-pw').onclick = () => changePasswordModal();
   box.querySelector('#me-out').onclick = () => { S.settings.token = null; save(); location.reload(); };
 }
-function changePasswordModal() {
-  const m = modal({ title: 'Cambiar mi contraseña', body: `
-    <div class="field"><label for="pw-cur">Contraseña actual</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"></div>
+/** forced: contraseña temporal al primer ingreso; no se puede cancelar y ya se conoce la actual. */
+function changePasswordModal({ forced = false, current: known = '', onDone } = {}) {
+  const m = modal({ title: forced ? 'Crea tu contraseña' : 'Cambiar mi contraseña', body: `
+    ${forced ? '<p class="small" style="margin:0 0 10px">Entraste con una contraseña temporal. Crea una propia para continuar; solo tú la conocerás.</p>' : '<div class="field"><label for="pw-cur">Contraseña actual</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"></div>'}
     <div class="field"><label for="pw-new">Contraseña nueva</label><input class="in" id="pw-new" type="password" autocomplete="new-password" minlength="8"></div>
     <div class="field"><label for="pw-rep">Repite la contraseña nueva</label><input class="in" id="pw-rep" type="password" autocomplete="new-password"></div>
     <p class="muted small" id="pw-msg" style="margin:0">Mínimo 8 caracteres. No la compartas con nadie.</p>`,
-    foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="pw-ok">Guardar contraseña</button>` });
+    foot: `${forced ? '<button class="btn" id="pw-out">Salir</button>' : '<button class="btn" data-close>Cancelar</button>'}<button class="btn pri" id="pw-ok">Guardar contraseña</button>` });
+  if (forced) {
+    m.querySelector('.modal-h [data-close]')?.remove();
+    m.addEventListener('click', (e) => { if (e.target === m) e.stopImmediatePropagation(); }, true); // clic afuera no la cierra
+    m.querySelector('#pw-out').onclick = () => { S.settings.token = null; save(); location.reload(); };
+  }
   const msg = (t) => { m.querySelector('#pw-msg').innerHTML = `<span class="neg">${esc(t)}</span>`; };
   const go = async () => {
-    const current = m.querySelector('#pw-cur').value, next = m.querySelector('#pw-new').value;
+    const current = forced ? known : m.querySelector('#pw-cur').value, next = m.querySelector('#pw-new').value;
     if (!current) return msg('Escribe tu contraseña actual.');
     if (next.length < 8) return msg('La contraseña nueva debe tener al menos 8 caracteres.');
     if (next !== m.querySelector('#pw-rep').value) return msg('Las dos contraseñas nuevas no coinciden.');
-    try { const d = await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); if (d.token) { S.settings.token = d.token; save(); } closeModal(); toast('Contraseña cambiada. Se cerraron tus otras sesiones abiertas.'); }
+    try { const d = await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); if (d.token) { S.settings.token = d.token; save(); } closeModal(); toast(forced ? 'Listo, ya tienes tu propia contraseña.' : 'Contraseña cambiada. Se cerraron tus otras sesiones abiertas.'); onDone?.(); }
     catch (e) { msg(e.message); }
   };
   m.querySelector('#pw-ok').onclick = go;

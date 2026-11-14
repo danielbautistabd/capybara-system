@@ -35,7 +35,7 @@ r.post('/auth/login', loginByIp, loginByEmail, validate(z.object({ email: z.stri
   const u = await prisma.user.findUnique({ where: { email: req.body.email } });
   if (!u || !u.active || !(await bcrypt.compare(req.body.password, u.passwordHash))) throw new HttpError(401, 'Correo o contraseña incorrectos');
   const token = signToken(u);
-  res.json({ token, user: { id: u.id, name: u.name, role: u.role, area: u.area } });
+  res.json({ token, user: { id: u.id, name: u.name, role: u.role, area: u.area, mustChangePassword: u.mustChangePassword } });
 }));
 
 r.use(auth);
@@ -48,7 +48,7 @@ r.post('/auth/password', passwordTries, validate(z.object({ current: z.string().
   if (!(await bcrypt.compare(req.body.current, u.passwordHash))) throw new HttpError(400, 'La contraseña actual no es correcta');
   if (req.body.current === req.body.next) throw new HttpError(400, 'La contraseña nueva debe ser distinta de la actual');
   // Cierra las demás sesiones (otro celular o computador) y entrega un token nuevo para esta.
-  await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await bcrypt.hash(req.body.next, 10), sessionsValidFrom: new Date() } });
+  await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await bcrypt.hash(req.body.next, 10), sessionsValidFrom: new Date(), mustChangePassword: false } });
   forgetUser(u.id);
   await audit(req, 'usuario.contrasena', 'User', u.id, null, { cambio: 'propia' });
   res.json({ ok: true, token: signToken(u) });

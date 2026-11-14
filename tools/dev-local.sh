@@ -72,7 +72,7 @@ cd "$API"
 [ -d node_modules ] || npm ci --no-audit --no-fund
 npx prisma generate >/dev/null
 npx prisma db push --skip-generate >/dev/null
-SEED_ADMIN_PASSWORD='CambiaEsta2026!' SEED_STAFF_PASSWORD='Capybara2026!' SEED_DEMO_USERS=true npm run --silent db:seed
+SEED_ADMIN_PASSWORD='CambiaEsta2026!' SEED_STAFF_PASSWORD='Capybara2026!' SEED_DEMO_USERS=true SEED_TEMP_PASSWORDS=false npm run --silent db:seed
 
 # 4) Interfaz compilada
 node "$ROOT/web/build.mjs" >/dev/null

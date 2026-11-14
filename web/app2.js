@@ -8,6 +8,7 @@ const remote = {
     const data = await r.json().catch(() => ({}));
     // Sesión vencida (dura 12 horas): pedir entrar de nuevo en lugar de dejar la pantalla con errores. Los borradores siguen guardados.
     if (r.status === 401 && S.settings.token && !path.startsWith('/api/v1/auth/')) { S.settings.token = null; save(); if (typeof loginModal === 'function') { loginModal(); toast('Tu sesión venció. Vuelve a iniciar sesión.'); } throw new Error('Tu sesión venció. Vuelve a iniciar sesión.'); }
+    if (r.status === 403 && data.code === 'cambiar_contrasena' && typeof changePasswordModal === 'function' && !$('#pw-ok')) { closeModal(); S.settings.token = null; save(); loginModal(); toast('Entra de nuevo para crear tu contraseña.'); }
     if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
     return data;
   },

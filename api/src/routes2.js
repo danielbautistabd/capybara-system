@@ -123,7 +123,8 @@ const userSchema = z.object({ name: z.string().min(2), email: z.string().email()
 r.get('/users', perm('usuarios.gestionar'), asyncH(async (_q, res) => res.json(await prisma.user.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true, email: true, phone: true, role: true, area: true, areas: true, active: true, createdAt: true } }))));
 r.post('/users', perm('usuarios.gestionar'), validate(userSchema.required({ password: true })), asyncH(async (req, res) => {
   const { password, ...data } = req.body;
-  const u = await prisma.user.create({ data: { ...data, passwordHash: await bcrypt.hash(password, 10) } });
+  // La contraseña que pone el administrador es temporal: el usuario la cambia al primer ingreso.
+  const u = await prisma.user.create({ data: { ...data, passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true } });
   await audit(req, 'usuario.crear', 'User', u.id, null, { ...data });
   res.status(201).json({ id: u.id });
 }));
@@ -133,7 +134,7 @@ r.patch('/users/:id', perm('usuarios.gestionar'), validate(userSchema.partial())
   const before = await prisma.user.findUniqueOrThrow({ where: { id: req.params.id }, select: { role: true, active: true } });
   // Contraseña nueva, desactivación o cambio de rol: se cierran sus sesiones abiertas (debe volver a entrar).
   const cut = !!password || data.active === false || (data.role && data.role !== before.role);
-  const u = await prisma.user.update({ where: { id: req.params.id }, data: { ...data, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}), ...(cut ? { sessionsValidFrom: new Date() } : {}) } });
+  const u = await prisma.user.update({ where: { id: req.params.id }, data: { ...data, ...(password ? { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: req.params.id !== req.user.sub } : {}), ...(cut ? { sessionsValidFrom: new Date() } : {}) } });
   forgetUser(u.id);
   await audit(req, 'usuario.editar', 'User', u.id, null, { ...data, ...(password ? { contrasena: 'cambiada' } : {}), ...(cut ? { sesionesCerradas: true } : {}) });
   res.json({ id: u.id });

@@ -10,7 +10,7 @@ export function forgetUser(id) { userCache.delete(id); }
 async function sessionUser(id) {
   const hit = userCache.get(id);
   if (hit && Date.now() - hit.at < USER_TTL) return hit.u;
-  const u = await prisma.user.findUnique({ where: { id }, select: { id: true, name: true, role: true, area: true, active: true, sessionsValidFrom: true } });
+  const u = await prisma.user.findUnique({ where: { id }, select: { id: true, name: true, role: true, area: true, active: true, sessionsValidFrom: true, mustChangePassword: true } });
   userCache.set(id, { at: Date.now(), u });
   return u;
 }
@@ -28,7 +28,9 @@ export async function auth(req, res, next) {
     const u = await sessionUser(payload.sub);
     if (!u || !u.active) return res.status(401).json({ error: 'Tu usuario está inactivo. Habla con el administrador.' });
     if (tokenRevoked(payload.iat, u.sessionsValidFrom)) return res.status(401).json({ error: 'Tu sesión se cerró porque cambió tu contraseña o tu acceso. Vuelve a iniciar sesión.' });
-    req.user = { ...payload, role: u.role, name: u.name, area: u.area };
+    req.user = { ...payload, role: u.role, name: u.name, area: u.area, mustChangePassword: u.mustChangePassword };
+    // Con contraseña temporal solo puede consultar quién es y cambiarla.
+    if (u.mustChangePassword && !['/auth/me', '/auth/password'].includes(req.path)) return res.status(403).json({ error: 'Debes cambiar tu contraseña temporal antes de continuar.', code: 'cambiar_contrasena' });
     next();
   } catch (e) { next(e); }
 }

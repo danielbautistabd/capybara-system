@@ -309,8 +309,13 @@ function loginModal() {
   const go = async () => {
     const email = m.querySelector('#lg-email').value.trim(), pw = m.querySelector('#lg-pw').value;
     if (!email || !pw) return toast('Escribe tu correo y contraseña.');
-    try { const d = await remote.login(email, pw); S.settings.lastEmail = email; await remote.load(); S.settings.mode = 'api'; S.recon = null; if (!S.users.some((u) => u.name === d.user.name)) S.users.push({ id: d.user.id, name: d.user.name, role: d.user.role, area: d.user.area || '', areas: [], email, active: true }); S.settings.user = d.user.name; save(); closeModal(); location.hash = homeView(); render(); toast(`Hola, ${d.user.name}`); }
-    catch (e) { m.querySelector('#lg-msg').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+    const enter = async (d) => { await remote.load(); S.settings.mode = 'api'; S.recon = null; if (!S.users.some((u) => u.name === d.user.name)) S.users.push({ id: d.user.id, name: d.user.name, role: d.user.role, area: d.user.area || '', areas: [], email, active: true }); S.settings.user = d.user.name; save(); closeModal(); location.hash = homeView(); render(); toast(`Hola, ${d.user.name}`); };
+    try {
+      const d = await remote.login(email, pw); S.settings.lastEmail = email;
+      // Contraseña temporal: primero crea la suya (el servidor entrega un token nuevo) y luego entra.
+      if (d.user.mustChangePassword) return changePasswordModal({ forced: true, current: pw, onDone: () => enter(d).catch((e) => toast('No se pudo cargar: ' + e.message)) });
+      await enter(d);
+    } catch (e) { m.querySelector('#lg-msg').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
   };
   m.querySelector('#lg-ok').onclick = go;
   m.querySelector('#lg-pw').onkeydown = (e) => e.key === 'Enter' && go();
@@ -324,23 +329,29 @@ function accountActions() {
   const on = S.settings.mode === 'api' && !!S.settings.token;
   box.innerHTML = on ? `<button class="btn ghost sm" id="me-pw">Cambiar mi contraseña</button><button class="btn ghost sm" id="me-out">Salir</button>` : '';
   if (!on) return;
-  box.querySelector('#me-pw').onclick = changePasswordModal;
+  box.querySelector('#me-pw').onclick = () => changePasswordModal();
   box.querySelector('#me-out').onclick = () => { S.settings.token = null; save(); location.reload(); };
 }
-function changePasswordModal() {
-  const m = modal({ title: 'Cambiar mi contraseña', body: `
-    <div class="field"><label for="pw-cur">Contraseña actual</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"></div>
+/** forced: contraseña temporal al primer ingreso; no se puede cancelar y ya se conoce la actual. */
+function changePasswordModal({ forced = false, current: known = '', onDone } = {}) {
+  const m = modal({ title: forced ? 'Crea tu contraseña' : 'Cambiar mi contraseña', body: `
+    ${forced ? '<p class="small" style="margin:0 0 10px">Entraste con una contraseña temporal. Crea una propia para continuar; solo tú la conocerás.</p>' : '<div class="field"><label for="pw-cur">Contraseña actual</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"></div>'}
     <div class="field"><label for="pw-new">Contraseña nueva</label><input class="in" id="pw-new" type="password" autocomplete="new-password" minlength="8"></div>
     <div class="field"><label for="pw-rep">Repite la contraseña nueva</label><input class="in" id="pw-rep" type="password" autocomplete="new-password"></div>
     <p class="muted small" id="pw-msg" style="margin:0">Mínimo 8 caracteres. No la compartas con nadie.</p>`,
-    foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="pw-ok">Guardar contraseña</button>` });
+    foot: `${forced ? '<button class="btn" id="pw-out">Salir</button>' : '<button class="btn" data-close>Cancelar</button>'}<button class="btn pri" id="pw-ok">Guardar contraseña</button>` });
+  if (forced) {
+    m.querySelector('.modal-h [data-close]')?.remove();
+    m.addEventListener('click', (e) => { if (e.target === m) e.stopImmediatePropagation(); }, true); // clic afuera no la cierra
+    m.querySelector('#pw-out').onclick = () => { S.settings.token = null; save(); location.reload(); };
+  }
   const msg = (t) => { m.querySelector('#pw-msg').innerHTML = `<span class="neg">${esc(t)}</span>`; };
   const go = async () => {
-    const current = m.querySelector('#pw-cur').value, next = m.querySelector('#pw-new').value;
+    const current = forced ? known : m.querySelector('#pw-cur').value, next = m.querySelector('#pw-new').value;
     if (!current) return msg('Escribe tu contraseña actual.');
     if (next.length < 8) return msg('La contraseña nueva debe tener al menos 8 caracteres.');
     if (next !== m.querySelector('#pw-rep').value) return msg('Las dos contraseñas nuevas no coinciden.');
-    try { const d = await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); if (d.token) { S.settings.token = d.token; save(); } closeModal(); toast('Contraseña cambiada. Se cerraron tus otras sesiones abiertas.'); }
+    try { const d = await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); if (d.token) { S.settings.token = d.token; save(); } closeModal(); toast(forced ? 'Listo, ya tienes tu propia contraseña.' : 'Contraseña cambiada. Se cerraron tus otras sesiones abiertas.'); onDone?.(); }
     catch (e) { msg(e.message); }
   };
   m.querySelector('#pw-ok').onclick = go;
