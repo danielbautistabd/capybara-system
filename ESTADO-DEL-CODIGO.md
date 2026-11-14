@@ -62,7 +62,8 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Importar Excel | Sí | `POST /products/import` |
 | Facturación: emitir | Sí | Los borradores viven en el navegador hasta emitir; al emitir se crea y emite en el servidor |
 | Facturación: enviar a Alegra y anular | Sí | `POST /invoices/:id/alegra` y `POST /invoices/:id/void`. Anular devuelve el inventario con contramovimiento (o anula la salida si estaba pendiente) |
-| Socios | Sí | Calcula con las facturas emitidas y los gastos que trae la API |
+| Socios | Sí | En modo API usa el libro diario del servidor (`GET /partners/days`: facturas emitidas, gastos y valor del inventario) y nunca el histórico de ejemplo; funciona para el rol Socio, que no puede leer facturas ni gastos sueltos |
+| Permisos de lectura | Sí | Toda ruta GET exige permiso salvo las de la propia cuenta (`/auth/me`, `/me/*`); `test/routes-guard.test.js` lo vigila. Grupos en `READ` de `routes.js` |
 | Caja del día | Sí | Con las facturas cargadas. También existe `GET /cash/today` |
 | Control de acceso | Sí | Crear y editar usuarios con contraseña (`POST/PATCH /users`) y guardar la matriz de permisos (`PUT /roles/:role`) |
 | Conteos físicos | Sí | `POST /counts` |

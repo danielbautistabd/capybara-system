@@ -14,3 +14,15 @@ test('toda ruta de escritura exige permiso', () => {
   }
   assert.deepEqual(sin, []);
 });
+
+// Las lecturas también: solo quedan abiertas las de la propia cuenta.
+test('toda ruta de lectura exige permiso', () => {
+  const propias = ["r.get('/auth/me'", "r.get('/me/permissions'", "r.get('/me/home'"];
+  const sin = [];
+  for (const f of fs.readdirSync(new URL('../src/', import.meta.url)).filter((x) => /^routes.*\.js$/.test(x))) {
+    for (const line of fs.readFileSync(new URL('../src/' + f, import.meta.url), 'utf8').split('\n')) {
+      if (/^r\.get\(/.test(line) && !/perm\(|can\(/.test(line) && !propias.some((c) => line.startsWith(c))) sin.push(`${f}: ${line.slice(0, 80)}`);
+    }
+  }
+  assert.deepEqual(sin, []);
+});

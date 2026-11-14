@@ -54,6 +54,14 @@ r.post('/auth/password', passwordTries, validate(z.object({ current: z.string().
   res.json({ ok: true, token: signToken(u) });
 }));
 
+/* Quién puede leer qué (además de los permisos de escritura de cada ruta). */
+const READ = {
+  catalogo: ['inventario.ver', 'movimientos.crear', 'entradas.crear', 'conteos.crear', 'facturacion.crear', 'conciliacion.ver', 'tablero.ver', 'inteligencia.ver', 'socios.ver'],
+  movimientos: ['inventario.ver', 'movimientos.crear', 'movimientos.aprobar', 'conciliacion.ver', 'tablero.ver', 'inteligencia.ver'],
+  proveedores: ['proveedores.gestionar', 'entradas.crear', 'entradas.aprobar', 'gastos.gestionar', 'inteligencia.ver', 'tablero.ver', 'alegra.gestionar', 'alegra.enviar'],
+  compras: ['entradas.crear', 'entradas.aprobar', 'proveedores.gestionar', 'gastos.gestionar', 'inteligencia.ver', 'tablero.ver', 'alegra.gestionar', 'alegra.enviar'],
+};
+
 /* ============ Dashboard ============ */
 r.get('/dashboard', perm('tablero.ver'), asyncH(async (req, res) => {
   const now = new Date();
@@ -119,8 +127,8 @@ const productSchema = z.object({
   expiresAt: z.coerce.date().optional().nullable(), photoUrl: z.string().optional().nullable(), notes: z.string().optional().nullable(),
 });
 
-r.get('/categories', asyncH(async (_q, res) => res.json(await prisma.category.findMany({ orderBy: { name: 'asc' } }))));
-r.get('/products', moneyGuard, asyncH(async (req, res) => {
+r.get('/categories', perm(READ.catalogo), asyncH(async (_q, res) => res.json(await prisma.category.findMany({ orderBy: { name: 'asc' } }))));
+r.get('/products', perm(READ.catalogo), moneyGuard, asyncH(async (req, res) => {
   const { q, categoryId, status = 'activo', low } = req.query;
   const where = { status: status === 'todos' ? undefined : status, categoryId: categoryId || undefined };
   if (q) where.OR = [{ name: { contains: q, mode: 'insensitive' } }, { code: { contains: q } }, { barcode: q }];
@@ -128,8 +136,8 @@ r.get('/products', moneyGuard, asyncH(async (req, res) => {
   if (low === 'true') list = list.filter((p) => p.stockCurrent <= p.stockMin);
   res.json(list.map((p) => ({ ...p, valorDisponible: Math.round(p.stockCurrent * p.avgCost) })));
 }));
-r.get('/products/:id', moneyGuard, asyncH(async (req, res) => res.json(toCoreProduct(await prisma.product.findUniqueOrThrow({ where: { id: req.params.id }, include: { category: true, supplier: true, prices: { orderBy: { ts: 'desc' }, take: 20 } } })))));
-r.get('/products/:id/history', moneyGuard, asyncH(async (req, res) => res.json((await prisma.movement.findMany({ where: { productId: req.params.id }, orderBy: { ts: 'desc' }, take: 500, include: { user: { select: { name: true } }, evidence: true } })).map(toCoreMovement))));
+r.get('/products/:id', perm(READ.catalogo), moneyGuard, asyncH(async (req, res) => res.json(toCoreProduct(await prisma.product.findUniqueOrThrow({ where: { id: req.params.id }, include: { category: true, supplier: true, prices: { orderBy: { ts: 'desc' }, take: 20 } } })))));
+r.get('/products/:id/history', perm(READ.movimientos), moneyGuard, asyncH(async (req, res) => res.json((await prisma.movement.findMany({ where: { productId: req.params.id }, orderBy: { ts: 'desc' }, take: 500, include: { user: { select: { name: true } }, evidence: true } })).map(toCoreMovement))));
 r.post('/products', can('SUPERVISOR'), validate(productSchema), asyncH(async (req, res) => {
   const p = await prisma.product.create({ data: { ...req.body, stockCurrent: req.body.stockInit } });
   await audit(req, 'product.create', 'Product', p.id, null, p);
@@ -154,7 +162,7 @@ const movementSchema = z.object({
   evidenceId: z.string().optional(), notes: z.string().optional(), ts: z.coerce.date().optional(), unitCost: z.number().optional(),
   approve: z.boolean().default(false),
 });
-r.get('/movements', moneyGuard, asyncH(async (req, res) => {
+r.get('/movements', perm(READ.movimientos), moneyGuard, asyncH(async (req, res) => {
   const { from, to, productId, type, source, status, userId, take = 200 } = req.query;
   const where = { productId, type, source, status, userId };
   if (from || to) where.ts = { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined };
@@ -222,7 +230,7 @@ r.post('/counts', perm('conteos.crear'), validate(z.object({ items: z.array(z.ob
 
 /* ============ Proveedores ============ */
 const supplierSchema = z.object({ name: z.string().min(2), taxId: z.string().optional().nullable(), phone: z.string().optional().nullable(), email: z.string().email().optional().nullable(), contact: z.string().optional().nullable(), notes: z.string().optional().nullable(), alegraId: z.string().max(40).optional().nullable() });
-r.get('/suppliers', asyncH(async (_q, res) => res.json(await prisma.supplier.findMany({ where: { active: true }, orderBy: { name: 'asc' } }))));
+r.get('/suppliers', perm(READ.proveedores), asyncH(async (_q, res) => res.json(await prisma.supplier.findMany({ where: { active: true }, orderBy: { name: 'asc' } }))));
 r.post('/suppliers', perm('proveedores.gestionar'), validate(supplierSchema), asyncH(async (req, res) => res.status(201).json(await prisma.supplier.create({ data: req.body }))));
 r.patch('/suppliers/:id', perm(['proveedores.gestionar', 'alegra.gestionar']), validate(supplierSchema.partial()), asyncH(async (req, res) => res.json(await prisma.supplier.update({ where: { id: req.params.id }, data: req.body }))));
 
@@ -233,7 +241,7 @@ const purchaseSchema = z.object({
   tax: z.number().default(0), discount: z.number().default(0), payMethod: z.string(), receivedBy: z.string(),
   attachmentId: z.string().optional(), notes: z.string().optional(), approve: z.boolean().default(false),
 });
-r.get('/purchases', moneyGuard, asyncH(async (req, res) => res.json(await prisma.purchase.findMany({ where: { status: req.query.status }, orderBy: { purchasedAt: 'desc' }, include: { supplier: true, items: true }, take: 200 }))));
+r.get('/purchases', perm(READ.compras), moneyGuard, asyncH(async (req, res) => res.json(await prisma.purchase.findMany({ where: { status: req.query.status }, orderBy: { purchasedAt: 'desc' }, include: { supplier: true, items: true }, take: 200 }))));
 r.post('/purchases', perm('entradas.crear'), validate(purchaseSchema), asyncH(async (req, res) => {
   const { items, approve, ...h } = req.body;
   const subtotal = items.reduce((a, i) => a + i.qty * i.unitCost, 0);
@@ -323,7 +331,7 @@ async function runReconciliation(userId) {
   return { runId: run.id, ...result };
 }
 /** Conciliación al momento, sin guardarla en el historial: la usan el tablero, Conciliación e Inteligencia. */
-r.get('/reconciliation/current', perm(['conciliacion.ver', 'tablero.ver', 'inteligencia.ver']), moneyGuard, asyncH(async (_q, res) => res.json({ ts: new Date(), ...(await computeReconciliation()) })));
+r.get('/reconciliation/current', perm(['conciliacion.ver', 'tablero.ver', 'inteligencia.ver', 'socios.ver']), moneyGuard, asyncH(async (_q, res) => res.json({ ts: new Date(), ...(await computeReconciliation()) })));
 r.post('/reconciliation/run', perm('conciliacion.ver'), asyncH(async (req, res) => {
   const out = await runReconciliation(req.user.sub);
   await audit(req, 'reconciliation.run', 'ReconciliationRun', out.runId, null, out.totals);

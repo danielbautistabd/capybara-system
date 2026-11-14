@@ -68,6 +68,12 @@ function seedSalesHistory() {
 
 /* ---------- libro diario de ingresos (histórico de ejemplo + facturas reales emitidas + gastos) ---------- */
 function dayBook(from, to) {
+  // Modo API: libro del servidor (solo facturas y gastos reales). Nunca se mezcla el histórico de ejemplo.
+  if (S.settings.mode === 'api') {
+    const out = [];
+    for (let t = +new Date(from + 'T12:00'); t <= +new Date(to + 'T12:00'); t += DAY) { const k = iso(t); const d = S.partnerDays?.[k]; out.push(d ? { ...d, ing: { ...d.ing }, pagos: { ...d.pagos }, gastos: { ...d.gastos } } : { date: k, ing: { Hospedaje: 0, Bar: 0, Restaurante: 0, Otros: 0 }, imp: 0, nights: 0, facturas: 0, pagos: {}, costo: 0, gastos: {} }); }
+    return out;
+  }
   const days = {};
   for (let t = +new Date(from + 'T12:00'); t <= +new Date(to + 'T12:00'); t += DAY) { const k = iso(t); days[k] = { date: k, ing: { Hospedaje: 0, Bar: 0, Restaurante: 0, Otros: 0 }, imp: 0, nights: 0, facturas: 0, pagos: {}, costo: 0, gastos: {} }; }
   const add = (o, k, v) => (o[k] = (o[k] || 0) + v);
@@ -114,7 +120,7 @@ RENDER.socios = () => {
   const P = S.partners, r = periodRange(P.period);
   const cur = sumBook(dayBook(r.from, r.to)), prev = sumBook(dayBook(r.pFrom, r.pTo));
   const st = stockMap();
-  const invValue = S.products.filter((p) => p.status === 'activo' && p.kind !== 'servicio').reduce((a, p) => a + Math.max(0, st[p.id]) * p.avgCost, 0);
+  const invValue = S.settings.mode === 'api' && S.partnerInv != null ? S.partnerInv : S.products.filter((p) => p.status === 'activo' && p.kind !== 'servicio').reduce((a, p) => a + Math.max(0, st[p.id]) * p.avgCost, 0);
   if (!S.recon) runRecon();
   const Hero = (k, v, sub, dl) => `<div class="hero-kpi pt"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${dl} <span class="muted">vs. ${r.cmp}</span>${sub ? ` · ${sub}` : ''}</span></div>`;
   const Mini = (k, v, dl, hint = '') => `<div class="kpi"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${dl}${hint ? ` · ${hint}` : ''}</span></div>`;
@@ -281,6 +287,10 @@ remote.load = async () => {
   const rc = await tryGet('/reconciliation/current');
   S.reconApi = rc && Array.isArray(rc.rows) ? rc : null;
   S.recon = S.reconApi;
+  // Socios: libro diario real de los últimos 200 días (cubre 90 días + su comparación y los últimos 4 meses).
+  const pd = await tryGet(`/partners/days?from=${iso(Date.now() - 200 * DAY)}&to=${iso(Date.now())}`);
+  S.partnerDays = pd ? Object.fromEntries(pd.days.map((d) => [d.date, d])) : null; S.partnerInv = pd ? pd.inventario : null;
+  if (pd?.camas && S.partners) S.partners.beds = pd.camas;
   const reqs = await tryGet('/purchase-requests');
   if (Array.isArray(reqs)) S.requests = reqs.map((r) => ({ ...r, qty: +r.qty }));
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor

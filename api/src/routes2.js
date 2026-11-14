@@ -190,6 +190,31 @@ async function partnerBook(from, to) {
   t.ticket = t.facturas ? (t.ingresos + t.imp) / t.facturas : 0;
   return t;
 }
+/** Libro diario de los socios con facturas emitidas y gastos REALES (sin datos de ejemplo), más el valor del inventario.
+ *  La pantalla de Socios lo usa en modo API: el rol Socio no puede leer facturas ni gastos sueltos. */
+r.get('/partners/days', perm('socios.ver'), moneyGuard, asyncH(async (req, res) => {
+  const to = req.query.to ? new Date(req.query.to + 'T23:59:59Z') : new Date();
+  const from = req.query.from ? new Date(req.query.from + 'T00:00:00Z') : new Date(Date.now() - 200 * 864e5);
+  const [invs, exps, prodList] = await Promise.all([
+    prisma.salesInvoice.findMany({ where: { status: 'emitida', date: { gte: from, lte: to } }, include: { lines: true } }),
+    prisma.expense.findMany({ where: { date: { gte: from, lte: to }, status: { not: 'anulado' } } }),
+    prisma.product.findMany({ include: { category: true } }),
+  ]);
+  const prods = Object.fromEntries(prodList.map((p) => [p.id, p]));
+  const days = {};
+  const day = (d) => (days[d] ||= { date: d, ing: { Hospedaje: 0, Bar: 0, Restaurante: 0, Otros: 0 }, imp: 0, nights: 0, facturas: 0, pagos: {}, costo: 0, gastos: {} });
+  for (const i of invs) {
+    const d = day(i.date.toISOString().slice(0, 10)); d.facturas++;
+    for (const l of i.lines) {
+      const p = prods[l.productId]; const sub = n(l.qty) * n(l.price); const tax = Math.round((sub * n(l.taxPct)) / 100); const line = LINE_OF(p?.category?.name);
+      d.ing[line] += sub; d.imp += tax; d.pagos[i.payMethod] = (d.pagos[i.payMethod] || 0) + sub + tax; d.costo += n(l.qty) * n(p?.avgCost || 0);
+      if (line === 'Hospedaje') d.nights += n(l.qty);
+    }
+  }
+  for (const e of exps) { const d = day(e.date.toISOString().slice(0, 10)); d.gastos[e.category] = (d.gastos[e.category] || 0) + n(e.amount); }
+  const inventario = prodList.filter((p) => p.status === 'activo' && p.kind !== 'servicio').reduce((a, p) => a + Math.max(0, n(p.stockCurrent)) * n(p.avgCost || 0), 0);
+  res.json({ days: Object.values(days), inventario: Math.round(inventario), camas: Number(process.env.HOSTEL_DORM_BEDS || 30) + Number(process.env.HOSTEL_PRIVATE_ROOMS || 6) });
+}));
 r.get('/partners/summary', perm('socios.ver'), asyncH(async (req, res) => {
   const to = req.query.to ? new Date(req.query.to + 'T23:59:59') : new Date();
   const from = req.query.from ? new Date(req.query.from + 'T00:00:00') : new Date(to.getFullYear(), to.getMonth(), 1);
