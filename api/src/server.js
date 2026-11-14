@@ -10,6 +10,7 @@ import { prisma } from './db.js';
 import routes from './routes.js';
 import routes2, { dailyInsightJob } from './routes2.js';
 import routesBilling from './routes-billing.js';
+import routesOrders from './routes-orders.js';
 import routesImport from './routes-import.js';
 import * as alegra from './services/alegra.js';
 import { errorHandler } from './middleware.js';
@@ -75,6 +76,7 @@ app.use('/api/v1', routesImport);
 app.use('/api/v1', routes);
 app.use('/api/v1', routes2);
 app.use('/api/v1', routesBilling);
+app.use('/api/v1', routesOrders);
 app.use('/uploads', express.static(path.resolve(config.storage.dir)));
 /* Archivos en Supabase Storage: redirige a un enlace firmado que vence en 5 minutos */
 app.get('/files/:file', async (req, res, next) => { try { const u = await signedFileUrl(req.params.file); if (!u) return res.status(404).end(); res.redirect(302, u); } catch (e) { next(e); } });

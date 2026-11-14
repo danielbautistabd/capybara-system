@@ -47,8 +47,10 @@ r.put('/invoices/:id', perm('facturacion.crear'), validate(invSchema), asyncH(as
   });
   res.json(inv);
 }));
-r.post('/invoices/:id/issue', perm('facturacion.emitir'), asyncH(async (req, res) => {
-  const inv = await prisma.salesInvoice.findUniqueOrThrow({ where: { id: req.params.id }, include: { lines: true } });
+/** Emitir: descuenta inventario (salida por venta; aprobada si emite un ADMIN o SUPERVISOR) y bloquea la factura.
+ *  La usan la hoja de facturación y el cierre de una cuenta de pedidos. user = { sub, role, name } */
+export async function issueInvoice(id, user) {
+  const inv = await prisma.salesInvoice.findUniqueOrThrow({ where: { id }, include: { lines: true } });
   if (inv.status !== 'borrador') throw new HttpError(409, `La factura ${inv.number} ya está ${inv.status}`);
   const prods = await prisma.product.findMany({ where: { id: { in: inv.lines.map((l) => l.productId) } } });
   const warnings = [];
@@ -56,14 +58,19 @@ r.post('/invoices/:id/issue', perm('facturacion.emitir'), asyncH(async (req, res
     const p = prods.find((x) => x.id === l.productId);
     if (!p || p.kind === 'servicio') continue;
     if (n(p.stockCurrent) < n(l.qty)) warnings.push(`${p.name}: stock ${n(p.stockCurrent)}, se venden ${n(l.qty)}`);
-    const { movement } = await proposeMovement({ productId: p.id, qty: n(l.qty), unit: p.unit, type: 'salida', source: 'manual', area: inv.room || 'Recepción', reason: `Venta ${inv.number} · ${inv.customerName}`, userId: req.user.sub, notes: `Factura ${inv.number}` });
-    const m = ['ADMIN', 'SUPERVISOR'].includes(req.user.role) ? await approveMovement(movement.id, req.user.sub) : movement;
+    const { movement } = await proposeMovement({ productId: p.id, qty: n(l.qty), unit: p.unit, type: 'salida', source: 'manual', area: inv.room || 'Recepción', reason: `Venta ${inv.number} · ${inv.customerName}`, userId: user.sub, notes: `Factura ${inv.number}` });
+    const m = ['ADMIN', 'SUPERVISOR'].includes(user.role) ? await approveMovement(movement.id, user.sub) : movement;
     await prisma.salesInvoiceLine.update({ where: { id: l.id }, data: { movementId: m.id } });
   }
-  const out = await prisma.salesInvoice.update({ where: { id: inv.id }, data: { status: 'emitida', issuedBy: req.user.name, issuedAt: new Date() } });
-  await audit(req, 'factura.emitir', 'SalesInvoice', inv.id, null, { number: inv.number, total: n(inv.total), warnings });
-  res.json({ invoice: out, warnings });
+  const out = await prisma.salesInvoice.update({ where: { id: inv.id }, data: { status: 'emitida', issuedBy: user.name, issuedAt: new Date() } });
+  return { invoice: out, warnings, total: n(inv.total) };
+}
+r.post('/invoices/:id/issue', perm('facturacion.emitir'), asyncH(async (req, res) => {
+  const out = await issueInvoice(req.params.id, req.user);
+  await audit(req, 'factura.emitir', 'SalesInvoice', out.invoice.id, null, { number: out.invoice.number, total: out.total, warnings: out.warnings });
+  res.json({ invoice: out.invoice, warnings: out.warnings });
 }));
+export { nextNumber, totals };
 /** Anular una factura emitida: sus salidas de inventario se anulan con contramovimiento (nunca se borran).
  *  Las salidas ya aprobadas devuelven el stock; las pendientes quedan anuladas para que nadie las apruebe después. */
 r.post('/invoices/:id/void', perm('facturacion.emitir'), validate(z.object({ reason: z.string().min(3) })), asyncH(async (req, res) => {
