@@ -4,6 +4,7 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
+import { rateLimit } from 'express-rate-limit';
 import { prisma, n, toCoreProduct, toCoreMovement } from './db.js';
 import { config } from './config.js';
 import { auth, can, audit, validate, asyncH, HttpError, forgetUser } from './middleware.js';
@@ -20,8 +21,17 @@ const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 const TYPES = Object.keys(MOVEMENT_TYPES);
 
 /* ============ Autenticación ============ */
+/* Contra quien prueba contraseñas: solo cuentan los intentos fallidos. Por correo+IP (adivinar la clave de alguien)
+ * y por IP (probar muchos correos). En Vercel cada instancia lleva su cuenta, igual frena el ataque. */
+const tooMany = (msg) => (req, res) => res.status(429).json({ error: msg });
+const LOGIN_MSG = 'Demasiados intentos fallidos. Espera 15 minutos e intenta de nuevo; si olvidaste la contraseña, pide una nueva al administrador.';
+const loginByEmail = rateLimit({ windowMs: 15 * 60_000, limit: 8, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => `${req.ip}|${String(req.body?.email || '').trim().toLowerCase()}`, handler: tooMany(LOGIN_MSG) });
+const loginByIp = rateLimit({ windowMs: 15 * 60_000, limit: 30, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false, handler: tooMany(LOGIN_MSG) });
+const passwordTries = rateLimit({ windowMs: 15 * 60_000, limit: 8, skipSuccessfulRequests: true, standardHeaders: true, legacyHeaders: false,
+  keyGenerator: (req) => 'u:' + req.user.sub, handler: tooMany('Demasiados intentos con la contraseña actual. Espera 15 minutos.') });
 const signToken = (u) => jwt.sign({ sub: u.id, role: u.role, name: u.name }, config.jwtSecret, { expiresIn: '12h' });
-r.post('/auth/login', validate(z.object({ email: z.string().email(), password: z.string().min(6) })), asyncH(async (req, res) => {
+r.post('/auth/login', loginByIp, loginByEmail, validate(z.object({ email: z.string().email(), password: z.string().min(6) })), asyncH(async (req, res) => {
   const u = await prisma.user.findUnique({ where: { email: req.body.email } });
   if (!u || !u.active || !(await bcrypt.compare(req.body.password, u.passwordHash))) throw new HttpError(401, 'Correo o contraseña incorrectos');
   const token = signToken(u);
@@ -32,7 +42,7 @@ r.use(auth);
 r.get('/auth/me', (req, res) => res.json(req.user));
 /** Cambiar la propia contraseña. Es una acción de la cuenta (como iniciar sesión), no de un rol:
  *  cualquiera con sesión puede cambiar SOLO la suya y debe confirmar la actual. */
-r.post('/auth/password', validate(z.object({ current: z.string().min(1), next: z.string().min(8, 'La contraseña nueva debe tener al menos 8 caracteres').max(200) })), asyncH(async (req, res) => {
+r.post('/auth/password', passwordTries, validate(z.object({ current: z.string().min(1), next: z.string().min(8, 'La contraseña nueva debe tener al menos 8 caracteres').max(200) })), asyncH(async (req, res) => {
   const u = await prisma.user.findUnique({ where: { id: req.user.sub } });
   if (!u || !u.active) throw new HttpError(401, 'Tu usuario no está activo');
   if (!(await bcrypt.compare(req.body.current, u.passwordHash))) throw new HttpError(400, 'La contraseña actual no es correcta');
