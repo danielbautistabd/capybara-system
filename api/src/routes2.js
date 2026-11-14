@@ -3,7 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { prisma, n, toCoreProduct, toCoreMovement } from './db.js';
-import { auth, audit, validate, asyncH, HttpError } from './middleware.js';
+import { auth, audit, validate, asyncH, HttpError, forgetUser } from './middleware.js';
 import { PERMISSIONS, ROLES, DEFAULT_ROLE_PERMS, hasPerm, maskMoney } from './core/permissions.js';
 import * as insights from './services/insights.js';
 import * as alegra from './services/alegra.js';
@@ -130,8 +130,12 @@ r.post('/users', perm('usuarios.gestionar'), validate(userSchema.required({ pass
 r.patch('/users/:id', perm('usuarios.gestionar'), validate(userSchema.partial()), asyncH(async (req, res) => {
   const { password, ...data } = req.body;
   if (req.params.id === req.user.sub && (data.role && data.role !== 'ADMIN' || data.active === false)) throw new HttpError(409, 'No puedes quitarte el rol de administrador ni desactivarte');
-  const u = await prisma.user.update({ where: { id: req.params.id }, data: { ...data, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) } });
-  await audit(req, 'usuario.editar', 'User', u.id, null, data);
+  const before = await prisma.user.findUniqueOrThrow({ where: { id: req.params.id }, select: { role: true, active: true } });
+  // Contraseña nueva, desactivación o cambio de rol: se cierran sus sesiones abiertas (debe volver a entrar).
+  const cut = !!password || data.active === false || (data.role && data.role !== before.role);
+  const u = await prisma.user.update({ where: { id: req.params.id }, data: { ...data, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}), ...(cut ? { sessionsValidFrom: new Date() } : {}) } });
+  forgetUser(u.id);
+  await audit(req, 'usuario.editar', 'User', u.id, null, { ...data, ...(password ? { contrasena: 'cambiada' } : {}), ...(cut ? { sesionesCerradas: true } : {}) });
   res.json({ id: u.id });
 }));
 r.get('/roles', perm('usuarios.gestionar'), asyncH(async (_q, res) => res.json({ roles: ROLES, permissions: PERMISSIONS, matrix: await permMap() })));

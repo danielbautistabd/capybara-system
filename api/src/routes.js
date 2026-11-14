@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma, n, toCoreProduct, toCoreMovement } from './db.js';
 import { config } from './config.js';
-import { auth, can, audit, validate, asyncH, HttpError } from './middleware.js';
+import { auth, can, audit, validate, asyncH, HttpError, forgetUser } from './middleware.js';
 import { parseInstruction, reconcile, MOVEMENT_TYPES } from './core/core.js';
 import { proposeMovement, approveMovement, voidMovement, approvePurchase } from './services/inventory.js';
 import { saveAttachment } from './services/storage.js';
@@ -20,10 +20,11 @@ const upload = multer({ limits: { fileSize: 20 * 1024 * 1024 } });
 const TYPES = Object.keys(MOVEMENT_TYPES);
 
 /* ============ Autenticación ============ */
+const signToken = (u) => jwt.sign({ sub: u.id, role: u.role, name: u.name }, config.jwtSecret, { expiresIn: '12h' });
 r.post('/auth/login', validate(z.object({ email: z.string().email(), password: z.string().min(6) })), asyncH(async (req, res) => {
   const u = await prisma.user.findUnique({ where: { email: req.body.email } });
   if (!u || !u.active || !(await bcrypt.compare(req.body.password, u.passwordHash))) throw new HttpError(401, 'Correo o contraseña incorrectos');
-  const token = jwt.sign({ sub: u.id, role: u.role, name: u.name }, config.jwtSecret, { expiresIn: '12h' });
+  const token = signToken(u);
   res.json({ token, user: { id: u.id, name: u.name, role: u.role, area: u.area } });
 }));
 
@@ -36,9 +37,11 @@ r.post('/auth/password', validate(z.object({ current: z.string().min(1), next: z
   if (!u || !u.active) throw new HttpError(401, 'Tu usuario no está activo');
   if (!(await bcrypt.compare(req.body.current, u.passwordHash))) throw new HttpError(400, 'La contraseña actual no es correcta');
   if (req.body.current === req.body.next) throw new HttpError(400, 'La contraseña nueva debe ser distinta de la actual');
-  await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await bcrypt.hash(req.body.next, 10) } });
+  // Cierra las demás sesiones (otro celular o computador) y entrega un token nuevo para esta.
+  await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await bcrypt.hash(req.body.next, 10), sessionsValidFrom: new Date() } });
+  forgetUser(u.id);
   await audit(req, 'usuario.contrasena', 'User', u.id, null, { cambio: 'propia' });
-  res.json({ ok: true });
+  res.json({ ok: true, token: signToken(u) });
 }));
 
 /* ============ Dashboard ============ */

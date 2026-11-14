@@ -340,7 +340,7 @@ function changePasswordModal() {
     if (!current) return msg('Escribe tu contraseña actual.');
     if (next.length < 8) return msg('La contraseña nueva debe tener al menos 8 caracteres.');
     if (next !== m.querySelector('#pw-rep').value) return msg('Las dos contraseñas nuevas no coinciden.');
-    try { await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); closeModal(); toast('Contraseña cambiada. Úsala la próxima vez que entres.'); }
+    try { const d = await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); if (d.token) { S.settings.token = d.token; save(); } closeModal(); toast('Contraseña cambiada. Se cerraron tus otras sesiones abiertas.'); }
     catch (e) { msg(e.message); }
   };
   m.querySelector('#pw-ok').onclick = go;

@@ -76,6 +76,7 @@ model User {
   area         String?  // Bar, Cocina, Recepción, Limpieza, Lavandería, Mantenimiento
   areas        String[] // áreas adicionales que puede ver/contar
   active       Boolean  @default(true)
+  sessionsValidFrom DateTime? // los tokens emitidos antes dejan de valer (contraseña, rol o desactivación)
   createdAt    DateTime @default(now())
   movements    Movement[] @relation("MovementUser")
   approvals    Movement[] @relation("MovementApprover")

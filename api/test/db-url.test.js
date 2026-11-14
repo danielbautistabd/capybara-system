@@ -22,3 +22,13 @@ test('explica qué tiene mal la dirección sin mostrarla', () => {
   assert.match(dbUrlProblem(URL.replace('clave123', 'cla ve')), /espacios/);
   for (const v of ['x', URL.replace('clave123', '[YOUR-PASSWORD]')]) assert.ok(!dbUrlProblem(v).includes('clave123'));
 });
+
+test('un token emitido antes del cierre de sesiones ya no vale', async () => {
+  const { tokenRevoked } = await import('../src/middleware.js');
+  const t = new Date('2026-11-14T15:00:00.400Z');
+  const iat = Math.floor(t.getTime() / 1000);
+  assert.equal(tokenRevoked(iat, null), false);
+  assert.equal(tokenRevoked(iat - 60, t), true);   // sesión vieja
+  assert.equal(tokenRevoked(iat, t), false);       // token nuevo entregado en el mismo segundo del cambio
+  assert.equal(tokenRevoked(iat + 5, t), false);
+});
