@@ -10,12 +10,24 @@ export function cleanDbUrl(name, v) {
   let s = v.trim();
   if (s.startsWith(name + '=')) s = s.slice(name.length + 1).trim();
   if (/^(["'`]).*\1$/s.test(s)) s = s.slice(1, -1).trim();
+  // Texto de más alrededor de la dirección (el comando psql, "export ...", una etiqueta): se toma solo la dirección.
+  const m = s.match(/postgres(?:ql)?:\/\/[^\s"'`]+/i);
+  if (m && m[0] !== s) s = m[0];
+  if (/^postgres(ql)?:\/\//i.test(s)) s = s.replace(/^postgres(ql)?/i, (x) => x.toLowerCase());
   return s;
 }
 /** Describe qué tiene mal la dirección, sin mostrar su contenido (para /health). */
 export function dbUrlProblem(v) {
   if (!v) return 'no está definida';
-  if (!/^postgres(ql)?:\/\//.test(v)) return 'no empieza por postgresql:// (revisa que copiaste la dirección completa de Connection String)';
+  if (!/^postgres(ql)?:\/\//.test(v)) {
+    const largo = `(${v.length} caracteres)`;
+    if (/^jdbc:/i.test(v)) return `es una dirección JDBC ${largo}; copia la de "Connection String" → URI`;
+    if (/^(host|user|dbname|port|password)\s*=/im.test(v) || /\bhost=/i.test(v)) return `son parámetros sueltos (host=…, user=…) ${largo}; copia la versión que empieza por postgresql://`;
+    if (/^https?:\/\//i.test(v)) return `es una dirección web (https://) ${largo}, no la de la base de datos; en Supabase usa Connect → Connection String`;
+    if (/^(sb_|eyJ)/.test(v)) return `parece una clave de API de Supabase ${largo}, no la dirección de la base de datos`;
+    if (!v.includes('@') && !v.includes('://')) return `parece solo una contraseña o un texto suelto ${largo}; debe ser la dirección completa que empieza por postgresql://`;
+    return `no empieza por postgresql:// ${largo} (revisa que copiaste la dirección completa de Connection String)`;
+  }
   if (/\[YOUR-PASSWORD\]|\[TU-CONTRASE/i.test(v)) return 'todavía tiene el texto [YOUR-PASSWORD]: cámbialo por la contraseña de la base de datos';
   if (/\s/.test(v)) return 'tiene espacios en medio';
   return null;

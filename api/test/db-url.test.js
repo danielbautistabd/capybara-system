@@ -32,3 +32,15 @@ test('un token emitido antes del cierre de sesiones ya no vale', async () => {
   assert.equal(tokenRevoked(iat, t), false);       // token nuevo entregado en el mismo segundo del cambio
   assert.equal(tokenRevoked(iat + 5, t), false);
 });
+
+test('rescata la dirección dentro de un comando y orienta sin mostrar el valor', () => {
+  assert.equal(cleanDbUrl('DATABASE_URL', `psql "${URL}"`), URL);
+  assert.equal(cleanDbUrl('DATABASE_URL', `export DATABASE_URL=${URL}`), URL);
+  assert.equal(cleanDbUrl('DATABASE_URL', URL.replace('postgresql', 'PostgreSQL')), URL);
+  assert.match(dbUrlProblem('jdbc:postgresql://x'), /JDBC/);
+  assert.match(dbUrlProblem('host=aws-1 port=6543 user=postgres.abc'), /parámetros sueltos/);
+  assert.match(dbUrlProblem('https://abc.supabase.co'), /dirección web/);
+  assert.match(dbUrlProblem('sb_secret_xxxxx'), /clave de API/);
+  assert.match(dbUrlProblem('MiClaveSecreta123'), /solo una contraseña/);
+  assert.ok(!dbUrlProblem('MiClaveSecreta123').includes('MiClave'));
+});
