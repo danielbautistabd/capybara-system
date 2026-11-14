@@ -27,7 +27,7 @@ r.get('/invoices', perm('facturacion.crear'), asyncH(async (req, res) => {
   if (req.query.from || req.query.to) where.date = { gte: req.query.from ? new Date(req.query.from) : undefined, lte: req.query.to ? new Date(req.query.to) : undefined };
   if (req.query.status) where.status = req.query.status;
   const list = await prisma.salesInvoice.findMany({ where, orderBy: { number: 'asc' }, take: 500, include: { lines: { orderBy: { position: 'asc' } } } });
-  if (req.query.format === 'rows') return res.json(list.flatMap((i) => i.lines.map((l) => ({ id: l.id, inv: i.number, invoiceId: i.id, date: i.date.toISOString().slice(0, 10), customer: i.customerName, room: i.room, productId: l.productId, qty: n(l.qty), price: n(l.price), taxPct: n(l.taxPct), pay: i.payMethod, status: i.status, issuedBy: i.issuedBy, alegra: i.alegraInvoiceId }))));
+  if (req.query.format === 'rows') return res.json(list.flatMap((i) => i.lines.map((l) => ({ id: l.id, inv: i.number, invoiceId: i.id, date: i.date.toISOString().slice(0, 10), customer: i.customerName, room: i.room, productId: l.productId, qty: n(l.qty), price: n(l.price), taxPct: n(l.taxPct), pay: i.payMethod, status: i.status, issuedBy: i.issuedBy, alegra: i.alegraInvoiceId, tab: (i.notes || '').match(/CTA-\d+/)?.[0] || null }))));
   res.json(list);
 }));
 r.post('/invoices', perm('facturacion.crear'), validate(invSchema), asyncH(async (req, res) => {

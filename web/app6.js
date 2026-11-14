@@ -31,6 +31,7 @@ const _upgrade = upgradeState;
 upgradeState = function () { _upgrade(); upgradeBilling(); };
 
 /* ---------------- motor de hoja ---------------- */
+let sheetExtraTabs = () => []; // otras pestañas (Pedidos, Cuentas, Para Alegra) las agrega app9.js
 const COLS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let SH = { tab: 'ventas', r: 0, c: 4, edit: false, q: '' };
 const invStatus = (inv) => S.billing.status[inv]?.st || 'borrador';
@@ -107,18 +108,19 @@ RENDER.facturacion = () => {
   const fx = row && col ? (col.fx ? col.fx(SH.r + 2) : ['calc', 'product', 'supplier', 'tax'].includes(col.t) ? cellText(col, row) : cellVal(col, row) ?? '') : '';
   const inv = SH.tab === 'ventas' && row ? row.inv : null;
   const invTot = inv ? S.billing.lines.filter((l) => l.inv === inv).reduce((a, l) => a + lineCalc(l).total, 0) : 0;
-  const tabs = [['ventas', 'Ventas'], ...(can('costos.ver') ? [['compras', 'Compras']] : []), ['resumen', 'Resumen']];
+  const tabs = [...sheetExtraTabs(), ['ventas', 'Ventas'], ...(can('costos.ver') ? [['compras', 'Compras']] : []), ['resumen', 'Resumen']];
   return `
   <div class="gs">
     <div class="gs-bar">
-      <div class="gs-title">${ic('sheet')}<b>Facturación Capybara ${new Date().getFullYear()}</b><span class="muted small">${SH.tab === 'ventas' ? 'Ventas' : SH.tab === 'compras' ? 'Compras' : 'Resumen'}</span></div>
+      <div class="gs-title">${ic('sheet')}<b>Facturación Capybara ${new Date().getFullYear()}</b><span class="muted small">${d.title ? d.title : SH.tab === 'ventas' ? 'Ventas' : SH.tab === 'compras' ? 'Compras' : 'Resumen'}</span></div>
       <span class="spacer"></span>
       <input class="in gs-search" id="gs-q" placeholder="Buscar en la hoja" value="${esc(SH.q)}">
     </div>
     <div class="gs-tools">
+      ${d.toolbar ? d.toolbar(row) : ''}
       ${SH.tab === 'ventas' && can('facturacion.crear') ? `<button class="btn sm" id="gs-newinv">${ic('plus')} Nueva factura</button><button class="btn sm" id="gs-addrow" ${inv && invStatus(inv) === 'borrador' ? '' : 'disabled'}>${ic('plus')} Línea en ${esc(inv || '—')}</button>` : ''}
       ${SH.tab === 'compras' ? `<button class="btn sm" id="gs-addp">${ic('plus')} Nueva fila</button><button class="btn sm pri" id="gs-mkp" ${S.billing.draftPurchases.length ? '' : 'disabled'}>Crear entradas (${S.billing.draftPurchases.length})</button>` : ''}
-      ${!d.locked(row || {}) ? `<button class="btn sm ghost" id="gs-delrow" title="Eliminar fila (solo borradores)">${ic('x')} Eliminar fila</button>` : ''}
+      ${!d.noDelete && !d.locked(row || {}) ? `<button class="btn sm ghost" id="gs-delrow" title="Eliminar fila (solo borradores)">${ic('x')} Eliminar fila</button>` : ''}
       <span class="gs-sep"></span>
       <button class="btn sm ghost" id="gs-copy" title="Copiar la hoja para pegar en Google Sheets o Excel">${ic('copy')} Copiar hoja</button>
       <span class="spacer"></span>
@@ -142,6 +144,7 @@ RENDER.facturacion = () => {
     </div>
     <div class="gs-tabs">${tabs.map(([k, l]) => `<button data-gt="${k}" class="${SH.tab === k ? 'on' : ''}">${l}</button>`).join('')}<span class="spacer"></span><span class="small muted hide-sm">Flechas para moverte · Enter para editar · Tab a la derecha · pega desde Excel con Ctrl+V</span></div>
   </div>
+  ${d.footer ? d.footer() : ''}
   ${SH.tab === 'ventas' ? `<p class="muted small" style="margin:0">Al emitir, cada línea descuenta el producto del inventario como <b>salida por venta</b> y queda bloqueada. El impuesto por defecto es INC 8 % para bar y restaurante, IVA 19 % para lo demás; cámbialo por línea si aplica. La factura electrónica ante la DIAN la genera Alegra al enviarla.</p>` : SH.tab === 'compras' ? `<p class="muted small" style="margin:0">Las filas grises son compras ya registradas. Escribe filas nuevas (proveedor, factura, producto, cantidad y costo) y pulsa <b>Crear entradas</b>: se agrupan por proveedor y factura y llegan como borrador a Registro de entradas.</p>` : ''}`;
 };
 function editorHtml(c, l) {
@@ -156,7 +159,7 @@ function setCell(row, c, raw) {
   if (c.t === 'calc') return false;
   let v = raw;
   if (['num', 'money'].includes(c.t)) { v = Number(String(raw).replace(/[$\s]/g, '').replace(/\.(?=\d{3}\b)/g, '').replace(',', '.')); if (!Number.isFinite(v) || v < 0) { toast('Escribe un número válido.'); return false; } }
-  if (c.t === 'product') { const p = S.products.find((x) => normalize(x.name) === normalize(raw)) || matchProduct(String(raw), catalogForParser())?.product; if (!p) { toast(`No encontré "${raw}" en el catálogo.`); return false; } v = p.id; if (SH.tab === 'ventas') { row.price = p.salePrice || row.price || 0; row.taxPct = defaultTax(p); } else { row.price = p.lastPrice || p.avgCost || 0; } }
+  if (c.t === 'product') { const p = S.products.find((x) => normalize(x.name) === normalize(raw)) || matchProduct(String(raw), catalogForParser())?.product; if (!p) { toast(`No encontré "${raw}" en el catálogo.`); return false; } v = p.id; if (SH.tab === 'ventas' || SH.tab === 'pedidos') { row.price = p.salePrice || row.price || 0; row.taxPct = defaultTax(p); } else { row.price = p.lastPrice || p.avgCost || 0; } }
   if (c.t === 'tax') v = +raw;
   if (c.t === 'date' && raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) { const m = String(raw).match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/); if (!m) { toast('Fecha en formato dd/mm/aaaa.'); return false; } v = `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; }
   if (c.k === 'inv' && SH.tab === 'ventas' && invStatus(v) !== 'borrador') { toast(`La factura ${v} ya fue emitida.`); return false; }
@@ -192,7 +195,7 @@ BIND.facturacion = (el) => {
   const move = (dr, dc) => { SH.r = Math.max(0, Math.min(d.rows.length - 1, SH.r + dr)); SH.c = Math.max(0, Math.min(d.cols.length - 1, SH.c + dc)); SH.edit = false; keepScroll(render); scrollSel(); };
   const scrollSel = () => $('#gs-grid td.sel')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   const startEdit = (seed) => { const row = d.rows[SH.r], c = d.cols[SH.c]; if (!row || c.t === 'calc') return; if (d.locked(row)) return toast(SH.tab === 'ventas' ? 'Factura emitida: no se puede editar.' : 'Fila bloqueada.'); SH.edit = true; keepScroll(render); const ed = $('#gs-ed'); if (ed) { ed.focus(); if (seed !== undefined && ed.tagName === 'INPUT' && ed.type !== 'date') ed.value = seed; } };
-  const commit = (dr = 0, dc = 0) => { const ed = $('#gs-ed'); const row = d.rows[SH.r]; if (ed && row) { if (!setCell(row, d.cols[SH.c], ed.value)) { ed.focus(); return; } save(); } SH.edit = false; move(dr, dc); };
+  const commit = (dr = 0, dc = 0) => { const ed = $('#gs-ed'); const row = d.rows[SH.r]; if (ed && row) { if (!setCell(row, d.cols[SH.c], ed.value)) { ed.focus(); return; } save(); d.onChange?.(row, d.cols[SH.c]); } SH.edit = false; move(dr, dc); };
   g.addEventListener('click', (e) => { const td = e.target.closest('td[data-r]'); if (!td || e.target.id === 'gs-ed') return; const r = +td.dataset.r, c = +td.dataset.c; if (SH.edit) commit(); if (r === SH.r && c === SH.c) return startEdit(); SH.r = r; SH.c = c; SH.edit = false; keepScroll(render); });
   g.addEventListener('dblclick', (e) => { if (e.target.closest('td[data-r]')) startEdit(); });
   g.addEventListener('keydown', (e) => {
@@ -204,7 +207,7 @@ BIND.facturacion = (el) => {
     if (k) { e.preventDefault(); return move(...k); }
     if (e.key === 'Tab') { e.preventDefault(); return move(0, e.shiftKey ? -1 : 1); }
     if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); return startEdit(); }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && d.rows[SH.r] && !d.locked(d.rows[SH.r])) { const c = d.cols[SH.c]; if (c.t !== 'calc' && c.t !== 'product') { d.rows[SH.r][c.k] = ['num', 'money'].includes(c.t) ? 0 : ''; save(); keepScroll(render); } return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && d.rows[SH.r] && !d.locked(d.rows[SH.r])) { const c = d.cols[SH.c]; if (c.t !== 'calc' && c.t !== 'product') { d.rows[SH.r][c.k] = ['num', 'money'].includes(c.t) ? 0 : ''; save(); d.onChange?.(d.rows[SH.r], c); keepScroll(render); } return; }
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); startEdit(e.key); }
   });
   g.addEventListener('paste', (e) => {
@@ -216,10 +219,11 @@ BIND.facturacion = (el) => {
       let row = d.rows[SH.r + i];
       if (!row) { if (SH.tab === 'ventas' && can('facturacion.crear')) { const base = d.rows[SH.r] || {}; row = { id: uid('fl'), inv: invStatus(base.inv) === 'borrador' ? base.inv : 'FV-' + String(S.billing.next++).padStart(4, '0'), date: iso(Date.now()), customer: base.customer || 'Consumidor final', room: base.room || '', productId: '', qty: 1, price: 0, taxPct: 8, pay: base.pay || 'Efectivo' }; S.billing.lines.push(row); } else if (SH.tab === 'compras') { row = { id: uid('dp'), date: iso(Date.now()), supplierId: '', inv: '', productId: '', qty: 1, price: 0, taxPct: 0, pay: 'Transferencia' }; S.billing.draftPurchases.push(row); } else return; }
       if (d.locked(row)) { skipped++; return; }
-      cells.forEach((v, j) => { const c = d.cols[SH.c + j]; if (c && v.trim() !== '' && c.t !== 'calc') { if (setCell(row, c, v.trim())) ok++; else skipped++; } });
+      cells.forEach((v, j) => { const c = d.cols[SH.c + j]; if (c && v.trim() !== '' && c.t !== 'calc') { if (setCell(row, c, v.trim())) { ok++; d.onChange?.(row, c); } else skipped++; } });
     });
     save(); keepScroll(render); toast(`Pegadas ${ok} celdas${skipped ? ` · ${skipped} omitidas` : ''}`);
   });
+  d.bind?.(el, d);
   $$('[data-gt]', el).forEach((b) => (b.onclick = () => { SH.tab = b.dataset.gt; SH.r = 0; SH.c = 0; SH.edit = false; render(); }));
   const q = $('#gs-q', el); q.oninput = () => { SH.q = q.value; SH.r = 0; render(); const n = $('#gs-q'); n.focus(); n.setSelectionRange(SH.q.length, SH.q.length); };
   $('#gs-newinv', el)?.addEventListener('click', newInvoice);
