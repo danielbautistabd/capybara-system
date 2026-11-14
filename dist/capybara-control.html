@@ -4212,7 +4212,7 @@ function cellText(col, row) {
   if (col.t === 'date') return new Date(v + 'T12:00').toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
   return String(v);
 }
-const isNumCol = (c) => ['num', 'money'].includes(c.t) || (c.t === 'calc' && c.k !== 'st' && c.k !== 'unit');
+const isNumCol = (c) => ['num', 'money'].includes(c.t) || (c.t === 'calc' && (c.num ?? (c.k !== 'st' && c.k !== 'unit')));
 
 RENDER.facturacion = () => {
   if (SH.tab === 'compras' && !can('costos.ver')) SH.tab = 'ventas';
@@ -5055,20 +5055,20 @@ function pedidosDef() {
     rows,
     locked: (r) => !can('facturacion.crear') || (!r._draft && (r.status !== 'pedido' || r._tab?.status !== 'abierta')),
     cols: [
-      { k: 'fecha', h: 'Fecha', w: 96, t: 'calc', f: (r) => (r.ts ? new Date(fDia(r.ts) + 'T12:00').toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' }) : 'nuevo') },
-      { k: 'hora', h: 'Hora', w: 64, t: 'calc', f: (r) => (r.ts ? fHora(r.ts) : '') },
+      { num: false, k: 'fecha', h: 'Fecha', w: 96, t: 'calc', f: (r) => (r.ts ? new Date(fDia(r.ts) + 'T12:00').toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' }) : 'nuevo') },
+      { num: false, k: 'hora', h: 'Hora', w: 64, t: 'calc', f: (r) => (r.ts ? fHora(r.ts) : '') },
       { k: 'tabLabel', h: 'Cuenta', w: 210, t: 'select', o: ['', ...ordOpenTabs().map(ordTabLabel)] },
-      { k: 'cliente', h: 'Huésped / cliente', w: 150, t: 'calc', f: (r) => r._tab?.customerName || '' },
-      { k: 'hab', h: 'Hab. / cama', w: 86, t: 'calc', f: (r) => r._tab?.room || '' },
+      { num: false, k: 'cliente', h: 'Huésped / cliente', w: 150, t: 'calc', f: (r) => r._tab?.customerName || '' },
+      { num: false, k: 'hab', h: 'Hab. / cama', w: 86, t: 'calc', f: (r) => r._tab?.room || '' },
       { k: 'productId', h: 'Producto', w: 210, t: 'product' },
       { k: 'qty', h: 'Cant.', w: 60, t: 'num' },
       { k: 'price', h: 'Precio', w: 96, t: 'money' },
       { k: 'taxPct', h: 'Impuesto', w: 92, t: 'tax' },
       { k: 'total', h: 'Total', w: 100, t: 'calc', f: (r) => (r.productId ? total(r) : ''), fx: (n) => `=G${n}*H${n}*(1+I${n})` },
-      { k: 'waiter', h: 'Mesero', w: 120, t: 'calc', f: (r) => r.waiter || me().name },
+      { num: false, k: 'waiter', h: 'Mesero', w: 120, t: 'calc', f: (r) => r.waiter || me().name },
       { k: 'st', h: 'Estado', w: 96, t: 'calc', f: (r) => (r._draft ? 'Sin guardar' : r._tab?.status === 'abierta' ? ORD_ST[r.status] : r.status === 'anulado' ? 'Anulado' : r._tab?.status === 'anulada' ? 'Cuenta anulada' : 'Facturado') },
-      { k: 'pago', h: 'Forma de pago', w: 110, t: 'calc', f: (r) => r._tab?.payMethod || '' },
-      { k: 'factura', h: 'Factura / Alegra', w: 130, t: 'calc', f: (r) => { const n = invNumberById(r._tab?.invoiceId); return n ? `${n}${S.billing.status[n]?.alegra ? ' · Alegra ' + S.billing.status[n].alegra : ''}` : ''; } },
+      { num: false, k: 'pago', h: 'Forma de pago', w: 110, t: 'calc', f: (r) => r._tab?.payMethod || '' },
+      { num: false, k: 'factura', h: 'Factura / Alegra', w: 130, t: 'calc', f: (r) => { const n = invNumberById(r._tab?.invoiceId); return n ? `${n}${S.billing.status[n]?.alegra ? ' · Alegra ' + S.billing.status[n].alegra : ''}` : ''; } },
     ],
     totals: { qty: 1, total: 1 },
     onChange: (row, c) => pedidoChanged(row, c),
@@ -5189,19 +5189,19 @@ function cuentasDef() {
     title: 'Cuentas', noDelete: true, rows,
     locked: (t) => t.status !== 'abierta' || !can('facturacion.crear'),
     cols: [
-      { k: 'number', h: 'Cuenta', w: 92, t: 'calc', f: (t) => t.number },
+      { num: false, k: 'number', h: 'Cuenta', w: 92, t: 'calc', f: (t) => t.number },
       { k: 'customerName', h: 'Huésped / cliente', w: 170, t: 'text' },
       { k: 'room', h: 'Hab. / cama', w: 92, t: 'text' },
       { k: 'customerDoc', h: 'Documento', w: 110, t: 'text' },
-      { k: 'abierta', h: 'Abierta', w: 120, t: 'calc', f: (t) => `${new Date(fDia(t.openedAt) + 'T12:00').toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' })} ${fHora(t.openedAt)}` },
+      { num: false, k: 'abierta', h: 'Abierta', w: 120, t: 'calc', f: (t) => `${new Date(fDia(t.openedAt) + 'T12:00').toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit' })} ${fHora(t.openedAt)}` },
       { k: 'pedidos', h: 'Pedidos', w: 72, t: 'calc', f: (t) => t.pedidos },
       { k: 'subtotal', h: 'Subtotal', w: 100, t: 'calc', f: (t) => t.subtotal },
       { k: 'tax', h: 'Impuestos', w: 92, t: 'calc', f: (t) => t.tax },
       { k: 'total', h: 'Total', w: 104, t: 'calc', f: (t) => t.total },
-      { k: 'openedBy', h: 'Abrió', w: 120, t: 'calc', f: (t) => t.openedBy },
+      { num: false, k: 'openedBy', h: 'Abrió', w: 120, t: 'calc', f: (t) => t.openedBy },
       { k: 'st', h: 'Estado', w: 92, t: 'calc', f: (t) => ({ abierta: 'Abierta', cerrada: 'Cerrada', anulada: 'Anulada' }[t.status] || t.status) },
-      { k: 'pago', h: 'Forma de pago', w: 110, t: 'calc', f: (t) => t.payMethod || '' },
-      { k: 'factura', h: 'Factura / Alegra', w: 130, t: 'calc', f: (t) => { const n = invNumberById(t.invoiceId); return n ? `${n}${S.billing.status[n]?.alegra ? ' · Alegra ' + S.billing.status[n].alegra : ''}` : ''; } },
+      { num: false, k: 'pago', h: 'Forma de pago', w: 110, t: 'calc', f: (t) => t.payMethod || '' },
+      { num: false, k: 'factura', h: 'Factura / Alegra', w: 130, t: 'calc', f: (t) => { const n = invNumberById(t.invoiceId); return n ? `${n}${S.billing.status[n]?.alegra ? ' · Alegra ' + S.billing.status[n].alegra : ''}` : ''; } },
     ],
     totals: { pedidos: 1, subtotal: 1, tax: 1, total: 1 },
     onChange: async (t, c) => {
@@ -5245,7 +5245,7 @@ function alegraDef() {
     title: 'Para Alegra', noDelete: true, rows, locked: () => true,
     cols: [
       { k: 'date', h: 'Fecha', w: 100, t: 'date' }, { k: 'inv', h: 'Factura', w: 92, t: 'text' }, { k: 'customer', h: 'Cliente / huésped', w: 170, t: 'text' }, { k: 'room', h: 'Hab. / punto', w: 92, t: 'text' },
-      { k: 'cuenta', h: 'Cuenta', w: 92, t: 'calc', f: (r) => S.billing.status[r.inv]?.tab || '' },
+      { num: false, k: 'cuenta', h: 'Cuenta', w: 92, t: 'calc', f: (r) => S.billing.status[r.inv]?.tab || '' },
       { k: 'lines', h: 'Líneas', w: 64, t: 'num' }, { k: 'sub', h: 'Subtotal', w: 104, t: 'money' }, { k: 'tax', h: 'Impuestos', w: 96, t: 'money' }, { k: 'total', h: 'Total', w: 108, t: 'money' },
       { k: 'pay', h: 'Pago', w: 104, t: 'text' }, { k: 'by', h: 'Emitió', w: 120, t: 'text' },
       { k: 'st', h: 'Revisión', w: 240, t: 'calc', f: (r) => (r.missing.length ? `Vincular en Alegra: ${r.missing.join(', ')}` : 'Lista para enviar') },

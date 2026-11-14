@@ -98,7 +98,7 @@ function cellText(col, row) {
   if (col.t === 'date') return new Date(v + 'T12:00').toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
   return String(v);
 }
-const isNumCol = (c) => ['num', 'money'].includes(c.t) || (c.t === 'calc' && c.k !== 'st' && c.k !== 'unit');
+const isNumCol = (c) => ['num', 'money'].includes(c.t) || (c.t === 'calc' && (c.num ?? (c.k !== 'st' && c.k !== 'unit')));
 
 RENDER.facturacion = () => {
   if (SH.tab === 'compras' && !can('costos.ver')) SH.tab = 'ventas';
