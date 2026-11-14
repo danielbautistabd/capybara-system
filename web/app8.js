@@ -316,6 +316,36 @@ function loginModal() {
   m.querySelector('#lg-pw').onkeydown = (e) => e.key === 'Enter' && go();
   m.querySelector('#lg-demo').onclick = () => { closeModal(); toast('Modo demostración: los datos de ejemplo viven solo en este navegador.'); };
 }
+
+/* ---------- mi cuenta (modo API): cambiar la propia contraseña y salir ---------- */
+function accountActions() {
+  let box = $('#me-acts');
+  if (!box) { box = document.createElement('div'); box.id = 'me-acts'; box.className = 'row'; box.style.cssText = 'gap:6px;margin-top:6px;flex-wrap:wrap'; $('#who')?.parentElement?.after(box); }
+  const on = S.settings.mode === 'api' && !!S.settings.token;
+  box.innerHTML = on ? `<button class="btn ghost sm" id="me-pw">Cambiar mi contraseña</button><button class="btn ghost sm" id="me-out">Salir</button>` : '';
+  if (!on) return;
+  box.querySelector('#me-pw').onclick = changePasswordModal;
+  box.querySelector('#me-out').onclick = () => { S.settings.token = null; save(); location.reload(); };
+}
+function changePasswordModal() {
+  const m = modal({ title: 'Cambiar mi contraseña', body: `
+    <div class="field"><label for="pw-cur">Contraseña actual</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="pw-new">Contraseña nueva</label><input class="in" id="pw-new" type="password" autocomplete="new-password" minlength="8"></div>
+    <div class="field"><label for="pw-rep">Repite la contraseña nueva</label><input class="in" id="pw-rep" type="password" autocomplete="new-password"></div>
+    <p class="muted small" id="pw-msg" style="margin:0">Mínimo 8 caracteres. No la compartas con nadie.</p>`,
+    foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="pw-ok">Guardar contraseña</button>` });
+  const msg = (t) => { m.querySelector('#pw-msg').innerHTML = `<span class="neg">${esc(t)}</span>`; };
+  const go = async () => {
+    const current = m.querySelector('#pw-cur').value, next = m.querySelector('#pw-new').value;
+    if (!current) return msg('Escribe tu contraseña actual.');
+    if (next.length < 8) return msg('La contraseña nueva debe tener al menos 8 caracteres.');
+    if (next !== m.querySelector('#pw-rep').value) return msg('Las dos contraseñas nuevas no coinciden.');
+    try { await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); closeModal(); toast('Contraseña cambiada. Úsala la próxima vez que entres.'); }
+    catch (e) { msg(e.message); }
+  };
+  m.querySelector('#pw-ok').onclick = go;
+  m.querySelector('#pw-rep').onkeydown = (e) => e.key === 'Enter' && go();
+}
 boot();
 if (window.CAPYBARA_API) {
   S.settings.baseUrl ||= window.CAPYBARA_API;

@@ -29,6 +29,17 @@ r.post('/auth/login', validate(z.object({ email: z.string().email(), password: z
 
 r.use(auth);
 r.get('/auth/me', (req, res) => res.json(req.user));
+/** Cambiar la propia contraseña. Es una acción de la cuenta (como iniciar sesión), no de un rol:
+ *  cualquiera con sesión puede cambiar SOLO la suya y debe confirmar la actual. */
+r.post('/auth/password', validate(z.object({ current: z.string().min(1), next: z.string().min(8, 'La contraseña nueva debe tener al menos 8 caracteres').max(200) })), asyncH(async (req, res) => {
+  const u = await prisma.user.findUnique({ where: { id: req.user.sub } });
+  if (!u || !u.active) throw new HttpError(401, 'Tu usuario no está activo');
+  if (!(await bcrypt.compare(req.body.current, u.passwordHash))) throw new HttpError(400, 'La contraseña actual no es correcta');
+  if (req.body.current === req.body.next) throw new HttpError(400, 'La contraseña nueva debe ser distinta de la actual');
+  await prisma.user.update({ where: { id: u.id }, data: { passwordHash: await bcrypt.hash(req.body.next, 10) } });
+  await audit(req, 'usuario.contrasena', 'User', u.id, null, { cambio: 'propia' });
+  res.json({ ok: true });
+}));
 
 /* ============ Dashboard ============ */
 r.get('/dashboard', perm('tablero.ver'), asyncH(async (req, res) => {

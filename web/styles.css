@@ -57,6 +57,8 @@ svg[viewBox="0 0 24 24"]{width:18px;height:18px;stroke:currentColor;fill:none;st
 .nav a .ct{margin-left:auto;background:var(--mango);color:var(--mango-ink);font-size:.7rem;font-weight:700;border-radius:99px;padding:1px 7px;font-family:var(--f-mono)}
 .nav svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .side-foot{margin-top:auto;padding:14px 10px 4px;font-size:.78rem;opacity:.75;display:flex;flex-direction:column;gap:6px}
+#me-acts .btn{color:inherit;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);opacity:1}
+#me-acts .btn:hover{background:rgba(255,255,255,.16)}
 .main{min-width:0;display:flex;flex-direction:column}
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding-block:12px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}

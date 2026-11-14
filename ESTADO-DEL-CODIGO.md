@@ -53,6 +53,7 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Módulo | Con la API | Notas |
 |---|---|---|
 | Inicio de sesión y roles | Sí | El rol viene del token. El backend también oculta costos a quien no tiene `costos.ver` |
+| Mi cuenta | Sí | En el menú lateral: "Cambiar mi contraseña" (`POST /auth/password`, pide la actual; mínimo 8 caracteres) y "Salir". Si la sesión de 12 h vence, vuelve a pedir el inicio de sesión sin perder borradores |
 | Productos, movimientos, proveedores, compras, gastos | Sí | `remote.load()` + `remoteAct.*` |
 | Marchados, aprobar/rechazar/anular | Sí | |
 | Importar Excel | Sí | `POST /products/import` |

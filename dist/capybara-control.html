@@ -62,6 +62,8 @@ svg[viewBox="0 0 24 24"]{width:18px;height:18px;stroke:currentColor;fill:none;st
 .nav a .ct{margin-left:auto;background:var(--mango);color:var(--mango-ink);font-size:.7rem;font-weight:700;border-radius:99px;padding:1px 7px;font-family:var(--f-mono)}
 .nav svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .side-foot{margin-top:auto;padding:14px 10px 4px;font-size:.78rem;opacity:.75;display:flex;flex-direction:column;gap:6px}
+#me-acts .btn{color:inherit;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.08);opacity:1}
+#me-acts .btn:hover{background:rgba(255,255,255,.16)}
 .main{min-width:0;display:flex;flex-direction:column}
 .top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding-block:12px;padding-left:max(20px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
@@ -1945,6 +1947,8 @@ const remote = {
   async req(path, { method = 'GET', body } = {}) {
     const r = await fetch(remote.base() + path, { method, headers: { 'Content-Type': 'application/json', ...(S.settings.token ? { Authorization: 'Bearer ' + S.settings.token } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const data = await r.json().catch(() => ({}));
+    // Sesión vencida (dura 12 horas): pedir entrar de nuevo en lugar de dejar la pantalla con errores. Los borradores siguen guardados.
+    if (r.status === 401 && S.settings.token && !path.startsWith('/api/v1/auth/')) { S.settings.token = null; save(); if (typeof loginModal === 'function') { loginModal(); toast('Tu sesión venció. Vuelve a iniciar sesión.'); } throw new Error('Tu sesión venció. Vuelve a iniciar sesión.'); }
     if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
     return data;
   },
@@ -2049,6 +2053,7 @@ function renderNav() {
   }).join('');
   $('#mode-chip').innerHTML = cl.active ? `${pill('Datos en Claude', 'p-ok')}<span id="cloud-st">${cl.statusHtml()}</span>` : S.settings.cloud?.on ? `${pill('Supabase', 'p-ok')}<span id="cloud-st">${cloud.statusHtml()}</span>` : S.settings.mode === 'api' ? `${pill('API conectada', 'p-ok')}<span class="small">${esc(remote.base())}</span>` : `${pill('Modo demostración', 'p-warn')}<span class="small">Datos de ejemplo en este navegador</span>`;
   $('#who').textContent = S.settings.user;
+  accountActions();
 }
 const charts = {};
 function render() {
@@ -3594,7 +3599,8 @@ renderNav = function () {
   $$('#nav a').forEach((a) => { const v = a.getAttribute('href').slice(1); if (!allowed(v) || (v === 'miturno' && can('tablero.ver') && me().role === 'ADMIN' && false)) a.remove(); });
   $$('#nav .grp').forEach((g) => { if (!g.nextElementSibling || g.nextElementSibling.classList.contains('grp')) g.remove(); });
   const u = me();
-  if ((S.settings.cloud?.on || cl.on()) && u.role !== 'ADMIN') { $('#who').textContent = `${u.name} · ${ROLES[u.role]}`; } else {
+  // Con la API el rol viene del token: "ver como" no cambia permisos, así que se muestra solo quién entró.
+  if (S.settings.mode === 'api' || ((S.settings.cloud?.on || cl.on()) && u.role !== 'ADMIN')) { $('#who').textContent = `${u.name} · ${ROLES[u.role]}`; } else {
   $('#who').innerHTML = `<select class="in" id="as-user" aria-label="Ver como" style="background:rgba(255,255,255,.08);color:inherit;border-color:rgba(255,255,255,.2);padding:5px 8px;margin-top:4px">${S.users.filter((x) => x.active).map((x) => opt(x.name, `${x.name} · ${ROLES[x.role]}`, u.name)).join('')}</select>`;
   $('#as-user').onchange = (e) => { S.settings.user = e.target.value; save(); toast(`Viendo como ${me().name} (${ROLES[me().role]})`); location.hash = homeView(); render(); };
   }
@@ -4807,6 +4813,36 @@ function loginModal() {
   m.querySelector('#lg-ok').onclick = go;
   m.querySelector('#lg-pw').onkeydown = (e) => e.key === 'Enter' && go();
   m.querySelector('#lg-demo').onclick = () => { closeModal(); toast('Modo demostración: los datos de ejemplo viven solo en este navegador.'); };
+}
+
+/* ---------- mi cuenta (modo API): cambiar la propia contraseña y salir ---------- */
+function accountActions() {
+  let box = $('#me-acts');
+  if (!box) { box = document.createElement('div'); box.id = 'me-acts'; box.className = 'row'; box.style.cssText = 'gap:6px;margin-top:6px;flex-wrap:wrap'; $('#who')?.parentElement?.after(box); }
+  const on = S.settings.mode === 'api' && !!S.settings.token;
+  box.innerHTML = on ? `<button class="btn ghost sm" id="me-pw">Cambiar mi contraseña</button><button class="btn ghost sm" id="me-out">Salir</button>` : '';
+  if (!on) return;
+  box.querySelector('#me-pw').onclick = changePasswordModal;
+  box.querySelector('#me-out').onclick = () => { S.settings.token = null; save(); location.reload(); };
+}
+function changePasswordModal() {
+  const m = modal({ title: 'Cambiar mi contraseña', body: `
+    <div class="field"><label for="pw-cur">Contraseña actual</label><input class="in" id="pw-cur" type="password" autocomplete="current-password"></div>
+    <div class="field"><label for="pw-new">Contraseña nueva</label><input class="in" id="pw-new" type="password" autocomplete="new-password" minlength="8"></div>
+    <div class="field"><label for="pw-rep">Repite la contraseña nueva</label><input class="in" id="pw-rep" type="password" autocomplete="new-password"></div>
+    <p class="muted small" id="pw-msg" style="margin:0">Mínimo 8 caracteres. No la compartas con nadie.</p>`,
+    foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="pw-ok">Guardar contraseña</button>` });
+  const msg = (t) => { m.querySelector('#pw-msg').innerHTML = `<span class="neg">${esc(t)}</span>`; };
+  const go = async () => {
+    const current = m.querySelector('#pw-cur').value, next = m.querySelector('#pw-new').value;
+    if (!current) return msg('Escribe tu contraseña actual.');
+    if (next.length < 8) return msg('La contraseña nueva debe tener al menos 8 caracteres.');
+    if (next !== m.querySelector('#pw-rep').value) return msg('Las dos contraseñas nuevas no coinciden.');
+    try { await remote.req('/api/v1/auth/password', { method: 'POST', body: { current, next } }); closeModal(); toast('Contraseña cambiada. Úsala la próxima vez que entres.'); }
+    catch (e) { msg(e.message); }
+  };
+  m.querySelector('#pw-ok').onclick = go;
+  m.querySelector('#pw-rep').onkeydown = (e) => e.key === 'Enter' && go();
 }
 boot();
 if (window.CAPYBARA_API) {

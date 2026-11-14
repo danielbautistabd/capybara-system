@@ -81,7 +81,8 @@ renderNav = function () {
   $$('#nav a').forEach((a) => { const v = a.getAttribute('href').slice(1); if (!allowed(v) || (v === 'miturno' && can('tablero.ver') && me().role === 'ADMIN' && false)) a.remove(); });
   $$('#nav .grp').forEach((g) => { if (!g.nextElementSibling || g.nextElementSibling.classList.contains('grp')) g.remove(); });
   const u = me();
-  if ((S.settings.cloud?.on || cl.on()) && u.role !== 'ADMIN') { $('#who').textContent = `${u.name} · ${ROLES[u.role]}`; } else {
+  // Con la API el rol viene del token: "ver como" no cambia permisos, así que se muestra solo quién entró.
+  if (S.settings.mode === 'api' || ((S.settings.cloud?.on || cl.on()) && u.role !== 'ADMIN')) { $('#who').textContent = `${u.name} · ${ROLES[u.role]}`; } else {
   $('#who').innerHTML = `<select class="in" id="as-user" aria-label="Ver como" style="background:rgba(255,255,255,.08);color:inherit;border-color:rgba(255,255,255,.2);padding:5px 8px;margin-top:4px">${S.users.filter((x) => x.active).map((x) => opt(x.name, `${x.name} · ${ROLES[x.role]}`, u.name)).join('')}</select>`;
   $('#as-user').onchange = (e) => { S.settings.user = e.target.value; save(); toast(`Viendo como ${me().name} (${ROLES[me().role]})`); location.hash = homeView(); render(); };
   }

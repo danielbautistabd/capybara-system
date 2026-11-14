@@ -6,6 +6,8 @@ const remote = {
   async req(path, { method = 'GET', body } = {}) {
     const r = await fetch(remote.base() + path, { method, headers: { 'Content-Type': 'application/json', ...(S.settings.token ? { Authorization: 'Bearer ' + S.settings.token } : {}) }, body: body ? JSON.stringify(body) : undefined });
     const data = await r.json().catch(() => ({}));
+    // Sesión vencida (dura 12 horas): pedir entrar de nuevo en lugar de dejar la pantalla con errores. Los borradores siguen guardados.
+    if (r.status === 401 && S.settings.token && !path.startsWith('/api/v1/auth/')) { S.settings.token = null; save(); if (typeof loginModal === 'function') { loginModal(); toast('Tu sesión venció. Vuelve a iniciar sesión.'); } throw new Error('Tu sesión venció. Vuelve a iniciar sesión.'); }
     if (!r.ok) throw new Error(data.error || `Error ${r.status}`);
     return data;
   },
@@ -110,6 +112,7 @@ function renderNav() {
   }).join('');
   $('#mode-chip').innerHTML = cl.active ? `${pill('Datos en Claude', 'p-ok')}<span id="cloud-st">${cl.statusHtml()}</span>` : S.settings.cloud?.on ? `${pill('Supabase', 'p-ok')}<span id="cloud-st">${cloud.statusHtml()}</span>` : S.settings.mode === 'api' ? `${pill('API conectada', 'p-ok')}<span class="small">${esc(remote.base())}</span>` : `${pill('Modo demostración', 'p-warn')}<span class="small">Datos de ejemplo en este navegador</span>`;
   $('#who').textContent = S.settings.user;
+  accountActions();
 }
 const charts = {};
 function render() {
