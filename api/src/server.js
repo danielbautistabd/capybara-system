@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import cron from 'node-cron';
-import { config } from './config.js';
+import { config, dbUrlProblem } from './config.js';
 import { prisma } from './db.js';
 import routes from './routes.js';
 import routes2, { dailyInsightJob } from './routes2.js';
@@ -54,7 +54,10 @@ app.post('/webhooks/alegra/:secret', (req, res) => {
 app.use('/api/', rateLimit({ windowMs: 60_000, max: 600 }));
 app.get('/health', async (_q, res) => {
   try { await prisma.$queryRaw`SELECT 1`; res.json({ ok: true, db: 'ok', ts: new Date() }); }
-  catch (e) { res.status(503).json({ ok: false, db: e.message }); }
+  catch (e) {
+    const p = dbUrlProblem(process.env.DATABASE_URL);
+    res.status(503).json({ ok: false, db: p ? `DATABASE_URL ${p}` : e.message });
+  }
 });
 /* -------- Tareas programadas por ruta (Supabase Cron + pg_net, o cualquier programador) --------
  * POST /api/v1/jobs/alegra-import | insights-daily | sheets-sync   con  Authorization: Bearer {CRON_SECRET} */

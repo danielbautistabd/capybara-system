@@ -1,3 +1,4 @@
+import './config.js'; // limpia DATABASE_URL antes de crear el cliente
 import { PrismaClient } from '@prisma/client';
 export const prisma = new PrismaClient();
 

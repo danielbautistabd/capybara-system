@@ -4,6 +4,24 @@ import 'dotenv/config';
 // y el servidor corre en UTC, así que se fija aquí; APP_TZ permite cambiarla.
 process.env.TZ = process.env.APP_TZ || 'America/Bogota';
 
+/** Limpia errores típicos al pegar una dirección de base de datos en un panel: espacios, comillas o "NOMBRE=" delante. */
+export function cleanDbUrl(name, v) {
+  if (typeof v !== 'string') return v;
+  let s = v.trim();
+  if (s.startsWith(name + '=')) s = s.slice(name.length + 1).trim();
+  if (/^(["'`]).*\1$/s.test(s)) s = s.slice(1, -1).trim();
+  return s;
+}
+/** Describe qué tiene mal la dirección, sin mostrar su contenido (para /health). */
+export function dbUrlProblem(v) {
+  if (!v) return 'no está definida';
+  if (!/^postgres(ql)?:\/\//.test(v)) return 'no empieza por postgresql:// (revisa que copiaste la dirección completa de Connection String)';
+  if (/\[YOUR-PASSWORD\]|\[TU-CONTRASE/i.test(v)) return 'todavía tiene el texto [YOUR-PASSWORD]: cámbialo por la contraseña de la base de datos';
+  if (/\s/.test(v)) return 'tiene espacios en medio';
+  return null;
+}
+for (const k of ['DATABASE_URL', 'DIRECT_URL']) if (process.env[k] !== undefined) process.env[k] = cleanDbUrl(k, process.env[k]);
+
 const num = (v, d) => (v === undefined || v === '' ? d : Number(v));
 const list = (v) => (v || '').split(',').map((s) => s.trim()).filter(Boolean);
 
