@@ -66,6 +66,12 @@ export const config = {
     allowed: list(process.env.WHATSAPP_ALLOWED_NUMBERS),
     sendAck: process.env.WHATSAPP_SEND_ACK === 'true',
   },
+  // Registro de pedidos en Drive: hoja de Google compartida (con permiso de edición) con la cuenta de servicio.
+  orders: {
+    sheetId: process.env.ORDERS_SHEET_ID,
+    sheetTab: process.env.ORDERS_SHEET_TAB || 'Pedidos',
+    driver: process.env.ORDERS_SHEET_DRIVER || 'auto', // auto (google si hay credenciales) | file | none
+  },
   google: {
     email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
     key: (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),

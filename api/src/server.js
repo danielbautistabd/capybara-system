@@ -17,6 +17,7 @@ import { errorHandler } from './middleware.js';
 import { verifySignature, handleWebhook } from './services/whatsapp.js';
 import { previewSync } from './services/sheets.js';
 import { signedFileUrl } from './services/storage.js';
+import { syncOrdersSheet } from './services/orders-sheet.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,6 +66,7 @@ app.get('/health', async (_q, res) => {
 const JOBS = {
   'alegra-import': () => (alegra.isConfigured() ? alegra.importBills({ since: new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10) }) : { skipped: 'Alegra no está configurado' }),
   'insights-daily': () => dailyInsightJob().then((r) => ({ generatedBy: r.generatedBy })),
+  'orders-sheet': () => syncOrdersSheet('cron'),
   'sheets-sync': async () => { const out = []; for (const s of await prisma.sheetSource.findMany({ where: { active: true, cron: { not: null } } })) out.push({ source: s.name, stats: (await previewSync(s.id, 'cron')).stats }); return out; },
 };
 app.post('/api/v1/jobs/:job', async (req, res, next) => {

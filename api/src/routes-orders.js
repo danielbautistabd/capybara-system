@@ -9,6 +9,7 @@ import { prisma, n } from './db.js';
 import { auth, audit, validate, asyncH, HttpError } from './middleware.js';
 import { perm } from './routes2.js';
 import { issueInvoice, nextNumber, totals } from './routes-billing.js';
+import { syncOrdersSheet, sheetStatus } from './services/orders-sheet.js';
 
 const r = Router();
 r.use(auth);
@@ -122,11 +123,16 @@ r.post('/orders/tabs/:id/close', perm('facturacion.emitir'), validate(z.object({
       prisma.orderTab.update({ where: { id: t.id }, data: { status: 'cerrada', closedAt: new Date(), closedBy: req.user.name, payMethod: req.body.payMethod, invoiceId: inv.id, ...(req.body.customerDoc ? { customerDoc: req.body.customerDoc } : {}) } }),
     ]);
     await audit(req, 'cuenta.cerrar', 'OrderTab', t.id, null, { number: t.number, factura: inv.number, total: out.total, pedidos: lines.length });
+    syncOrdersSheet('cierre', req.user.sub).catch(() => {}); // el registro en Drive no frena el cobro; la tarea cada 15 min lo repone
     res.json({ tab: t.number, invoice: { id: inv.id, number: inv.number, total: out.total }, warnings: out.warnings });
   } catch (e) {
     await prisma.orderTab.updateMany({ where: { id: req.params.id, status: 'cerrando' }, data: { status: 'abierta' } });
     throw e;
   }
 }));
+
+/* ---------- registro en Google Drive ---------- */
+r.get('/orders/sheet', perm(['facturacion.crear', 'facturacion.emitir', 'sheets.sincronizar']), asyncH(async (_q, res) => res.json(await sheetStatus())));
+r.post('/orders/sheet/sync', perm(['facturacion.emitir', 'sheets.sincronizar']), asyncH(async (req, res) => res.json(await syncOrdersSheet('manual', req.user.sub))));
 
 export default r;

@@ -4998,7 +4998,7 @@ if (window.CAPYBARA_API) {
 
 VIEWS.facturacion.t = 'Pedidos y facturación';
 VIEWS.facturacion.short = 'Pedidos';
-let ORD = { tabs: [], drafts: [], showClosed: false, busy: false, loaded: false };
+let ORD = { tabs: [], drafts: [], showClosed: false, busy: false, loaded: false, drive: null };
 const ordApi = () => S.settings.mode === 'api';
 const ordTabById = (id) => ORD.tabs.find((t) => t.id === id);
 const ordTabLabel = (t) => (t ? `${t.number} · ${t.customerName}${t.room ? ' · ' + t.room : ''}` : '');
@@ -5013,6 +5013,7 @@ async function loadOrders() {
   if (!S.settings.token || !(can('facturacion.crear') || can('facturacion.emitir'))) { ORD.tabs = []; return; }
   try { ORD.tabs = await remote.req(`/api/v1/orders/tabs?status=${ORD.showClosed ? 'todas' : 'abierta'}&days=7`); ORD.loaded = true; }
   catch (e) { toast('No se cargaron los pedidos: ' + e.message); }
+  ORD.drive = await remote.req('/api/v1/orders/sheet').catch(() => null);
 }
 const _remoteLoad9 = remote.load;
 remote.load = async () => { await _remoteLoad9(); await loadOrders(); };
@@ -5031,6 +5032,23 @@ sheetDef = function () {
   if (SH.tab === 'alegra') return alegraDef();
   return _sheetDef9();
 };
+
+/* ---------- registro en Google Drive ---------- */
+const canDrive = () => can('facturacion.emitir') || can('sheets.sincronizar');
+function driveHtml() {
+  const d = ORD.drive; if (!d) return '';
+  if (!d.configured) return `<span class="small muted" title="Configura ORDERS_SHEET_ID y la cuenta de servicio de Google en el servidor">Drive: sin configurar</span>`;
+  const last = d.last ? `${d.last.error ? '<span class="neg">con error</span>' : 'al día'} · ${fHora(d.last.at)} · ${num(d.last.rows || 0)} filas` : 'sin registrar aún';
+  return `<span class="small muted">Drive: ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.tab)}</a>` : esc(d.tab)} ${last}</span>${canDrive() ? `<button class="btn sm ghost" id="or-drive" ${ORD.busy ? 'disabled' : ''}>Registrar en Drive</button>` : ''}`;
+}
+function driveBind(el) {
+  $('#or-drive', el)?.addEventListener('click', async () => {
+    ORD.busy = true; render();
+    try { const r = await remote.req('/api/v1/orders/sheet/sync', { method: 'POST' }); toast(`Registrado en Drive: ${num(r.rows)} pedidos en la pestaña ${ORD.drive?.tab || 'Pedidos'}`); }
+    catch (e) { toast(e.message); }
+    ORD.busy = false; ORD.drive = await remote.req('/api/v1/orders/sheet').catch(() => ORD.drive); render();
+  });
+}
 
 /* ---------- Pedidos: una fila por pedido ---------- */
 function pedidosRows() {
@@ -5100,11 +5118,13 @@ function pedidosToolbar(row) {
     ${row && !row._draft && row.status === 'pedido' && t?.status === 'abierta' && can('facturacion.crear') ? `<button class="btn sm ghost" id="or-voidline">${ic('x')} Anular pedido</button>` : ''}
     ${row?._draft ? `<button class="btn sm ghost" id="or-dropdraft">${ic('x')} Quitar fila</button>` : ''}
     <label class="row small" style="gap:4px"><input type="checkbox" id="or-closed" ${ORD.showClosed ? 'checked' : ''}> Ver cerradas (7 días)</label>
+    ${driveHtml()}
     ${t ? `<span class="gs-sep"></span><span class="small">Cuenta <b class="mono">${esc(t.number)}</b> · ${esc(t.customerName)}${t.room ? ' · ' + esc(t.room) : ''} · ${live.length} ${live.length === 1 ? 'pedido' : 'pedidos'} · <b class="num">${money(t.total)}</b></span>
       ${t.status === 'abierta' && can('facturacion.emitir') ? `<button class="btn sm pri" id="or-close">${ic('check')} Cerrar y facturar</button><button class="btn sm ghost" id="or-voidtab">Anular cuenta</button>` : ''}
       ${t.status === 'abierta' && !can('facturacion.emitir') ? pill('Caja o un manager cierra la cuenta', 'p-info') : ''}` : ''}`;
 }
 function pedidosBind(el) {
+  driveBind(el);
   $('#or-newtab', el)?.addEventListener('click', () => tabForm());
   $('#or-newline', el)?.addEventListener('click', () => newOrderLine());
   $('#or-dropdraft', el)?.addEventListener('click', () => { const r = sheetDef().rows[SH.r]; ORD.drafts = ORD.drafts.filter((x) => x.id !== r.id); SH.r = Math.max(0, SH.r - 1); render(); });
@@ -5203,6 +5223,7 @@ function cuentasDef() {
     toolbar: (t) => `
       ${can('facturacion.crear') ? `<button class="btn sm" id="or-newtab">${ic('plus')} Nueva cuenta</button>` : ''}
       <label class="row small" style="gap:4px"><input type="checkbox" id="or-closed" ${ORD.showClosed ? 'checked' : ''}> Ver cerradas (7 días)</label>
+      ${driveHtml()}
       ${t && t.status === 'abierta' ? `<span class="gs-sep"></span>${can('facturacion.crear') ? `<button class="btn sm" id="or-addto">${ic('plus')} Pedido para ${esc(t.number)}</button>` : ''}${can('facturacion.emitir') ? `<button class="btn sm pri" id="or-close">${ic('check')} Cerrar y facturar ${money(t.total)}</button><button class="btn sm ghost" id="or-voidtab">Anular cuenta</button>` : ''}` : ''}`,
     bind: (el) => {
       pedidosBind(el);

@@ -60,6 +60,7 @@ Si se migra a un framework (React/Vue/Svelte), `api/src/core/` se puede importar
 | Productos, movimientos, proveedores, compras, gastos | Sí | `remote.load()` + `remoteAct.*` |
 | Marchados, aprobar/rechazar/anular | Sí | |
 | Importar Excel | Sí | `POST /products/import` |
+| Registro de pedidos en Drive | Sí (falta la hoja real) | `services/orders-sheet.js`: reescribe la pestaña `Pedidos` de `ORDERS_SHEET_ID` (valores RAW) al cerrar una cuenta, con el botón Registrar en Drive (`POST /orders/sheet/sync`) y cada 15 min (`/jobs/orders-sheet`, `supabase/cron.sql`). En desarrollo `ORDERS_SHEET_DRIVER=file` escribe `api/uploads/pedidos-drive.json`. Cada sincronización queda en la bitácora (`drive.pedidos`) |
 | Pedidos con cuenta abierta | Sí | `web/app9.js` + `routes-orders.js`. Hoja "Pedidos y facturación" (motor de `app6.js`): pestañas Pedidos (una fila por pedido), Cuentas (una por huésped/habitación) y Para Alegra. Los pedidos no tocan el inventario; cerrar la cuenta crea UNA factura y la emite con `issueInvoice` (misma lógica de la hoja). Nada se borra: pedidos y cuentas se anulan con motivo. Para Alegra marca las facturas con productos sin vincular y envía en bloque solo las listas |
 | Facturación: emitir | Sí | Los borradores viven en el navegador hasta emitir; al emitir se crea y emite en el servidor |
 | Facturación: enviar a Alegra y anular | Sí | `POST /invoices/:id/alegra` y `POST /invoices/:id/void`. Anular devuelve el inventario con contramovimiento (o anula la salida si estaba pendiente) |

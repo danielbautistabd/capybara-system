@@ -39,6 +39,15 @@ select cron.schedule('capybara-sheets-sync', '5 * * * *', $$
   ) as request_id;
 $$);
 
+-- Registro de pedidos en la hoja de Google (pestaña Pedidos), cada 15 minutos
+select cron.schedule('capybara-orders-sheet', '*/15 * * * *', $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'capybara_app_url') || '/api/v1/jobs/orders-sheet',
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'capybara_cron_secret')),
+    body := '{}'::jsonb
+  ) as request_id;
+$$);
+
 -- Revisar ejecuciones:   select * from cron.job_run_details order by start_time desc limit 20;
 -- Respuestas HTTP:       select * from net._http_response order by created desc limit 20;
 -- Quitar una tarea:      select cron.unschedule('capybara-sheets-sync');

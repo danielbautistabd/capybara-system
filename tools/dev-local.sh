@@ -48,6 +48,8 @@ CURRENCY=COP
 DATABASE_URL=postgresql://postgres@localhost:$PGPORT/capybara_control?schema=public&host=/tmp
 DIRECT_URL=postgresql://postgres@localhost:$PGPORT/capybara_control?schema=public&host=/tmp
 STORAGE_DRIVER=local
+# Registro de pedidos en Drive SIMULADO: escribe api/uploads/pedidos-drive.json. En producción: ORDERS_SHEET_ID y cuenta de servicio.
+ORDERS_SHEET_DRIVER=file
 UPLOAD_DIR=./uploads
 AUTO_APPLY_CONFIDENCE=0.85
 AUTO_APPLY_ENABLED=false
