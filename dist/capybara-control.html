@@ -1942,6 +1942,7 @@ function runRecon() {
 /* ================= Capybara Control · app (2/4): API remota, shell, tablero ================= */
 
 /* ---------------- API remota (backend Capybara Control) ---------------- */
+const MV_WINDOW_DAYS = 70; // igual que el servidor en Inteligencia (services/insights.js)
 const remote = {
   base: () => (S.settings.baseUrl || '').replace(/\/$/, ''),
   async req(path, { method = 'GET', body } = {}) {
@@ -1956,7 +1957,11 @@ const remote = {
   async health() { return remote.req('/health'); },
   async login(email, password) { const d = await remote.req('/api/v1/auth/login', { method: 'POST', body: { email, password } }); S.settings.token = d.token; S.settings.user = d.user.name; S.settings.role = d.user.role; S.settings.area = d.user.area || ''; save(); return d; },
   async load() {
-    const [products, movements, suppliers, purchases, expenses, inbox, categories] = await Promise.all(['/products?status=todos', '/movements?take=2000', '/suppliers', '/purchases', '/expenses', '/whatsapp/inbox', '/categories'].map((p, i) => remote.req('/api/v1' + p).catch((e) => { if (i === 0) throw e; return []; }))); // sin permiso para un recurso = lista vacía
+    // Movimientos: TODOS los de los últimos 70 días (consumo, plan de reposición, resúmenes) más los que siguen por aprobar
+    // aunque sean viejos. El histórico completo (conciliación, kardex) lo calcula el servidor.
+    const since = new Date(Date.now() - MV_WINDOW_DAYS * 864e5).toISOString();
+    const [products, recent, pend, info, suppliers, purchases, expenses, inbox, categories] = await Promise.all(['/products?status=todos', `/movements?from=${encodeURIComponent(since)}&take=50000`, '/movements?status=pendiente&take=5000', '/movements?status=requiere_info&take=5000', '/suppliers', '/purchases', '/expenses', '/whatsapp/inbox', '/categories'].map((p, i) => remote.req('/api/v1' + p).catch((e) => { if (i === 0) throw e; return []; }))); // sin permiso para un recurso = lista vacía
+    const movements = [...new Map([...recent, ...pend, ...info].map((m) => [m.id, m])).values()].sort((a, b) => new Date(b.ts) - new Date(a.ts));
     S.categories = categories;
     S.products = products.map((p) => ({ ...p, category: p.category, example: false }));
     S.movements = movements.map((m) => ({ ...m, user: m.user?.name || m.reportedBy || '', evidence: m.evidenceId, inboxId: m.inboxItemId }));

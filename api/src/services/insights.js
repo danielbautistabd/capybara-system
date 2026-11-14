@@ -16,7 +16,7 @@ export async function loadState() {
     prisma.supplier.findMany(),
     prisma.purchase.findMany({ where: { purchasedAt: { gte: since } } }),
     prisma.expense.findMany({ where: { date: { gte: since } } }),
-    prisma.physicalCount.findMany({ where: { ts: { gte: since } } }),
+    prisma.physicalCount.findMany(), // todos: el último conteo de un producto puede tener más de 70 días
     prisma.inboxItem.findMany({ where: { ts: { gte: since } }, select: { ts: true, status: true } }),
     prisma.purchase.findMany({ where: { status: 'borrador', kind: 'orden' }, include: { items: true } }),
   ]);
@@ -28,7 +28,7 @@ export async function loadState() {
   const plan = reorderPlan({ products: P, movements: M, stockOf: (p) => p.stockCurrent, leadDays: (p) => leadOf[p.supplierId] ?? 2, onOrder, service: config.rules.serviceLevel });
   // conciliación sobre todos los movimientos aprobados para no recortar el histórico
   const allApproved = (await prisma.movement.findMany({ where: { status: 'aprobado' } })).map(toCoreMovement);
-  const recon = reconcile({ products: P, movements: allApproved, counts: counts.map((c) => ({ ...c, qty: n(c.qty) })) });
+  const recon = reconcile({ products: P.filter((p) => p.kind !== 'servicio'), movements: allApproved, counts: counts.map((c) => ({ ...c, qty: n(c.qty) })), minorPct: config.rules.minorPct, minorAbs: config.rules.minorAbs });
   const signals = purchaseSignals({ products: P, movements: M, plan, recon });
   return { products: P, movements: M, suppliers, purchases: purchases.map((p) => ({ ...p, total: n(p.total) })), expenses: expenses.map((e) => ({ ...e, amount: n(e.amount) })), inbox, plan, signals, recon };
 }
