@@ -341,7 +341,7 @@ async function syncAndReconcile() {
     if (S.settings.mode === 'api') {
       const r = await remote.req('/api/v1/sync-and-reconcile', { method: 'POST' });
       await remote.load();
-      S.recon = { ts: new Date().toISOString(), ...r.reconciliation };
+      S.reconApi = S.recon = { ts: new Date().toISOString(), ...r.reconciliation };
       summary = { sheets: r.sheets.reduce((a, s) => a + (s.pendientes || 0), 0), wa: r.whatsappPending, recon: S.recon };
     } else {
       await new Promise((r) => setTimeout(r, 650));

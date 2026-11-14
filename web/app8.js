@@ -277,7 +277,10 @@ remote.load = async () => {
   // Conteos físicos reales: la conciliación del navegador (tablero, Conciliación, Inteligencia) usa el mismo corte que el servidor.
   const counts = await tryGet('/counts');
   S.counts = Array.isArray(counts) ? counts.map((c) => ({ ...c, qty: +c.qty })) : [];
-  S.recon = null;
+  // Conciliación calculada en el servidor con todos los movimientos aprobados (aquí solo llegan los más recientes).
+  const rc = await tryGet('/reconciliation/current');
+  S.reconApi = rc && Array.isArray(rc.rows) ? rc : null;
+  S.recon = S.reconApi;
   const reqs = await tryGet('/purchase-requests');
   if (Array.isArray(reqs)) S.requests = reqs.map((r) => ({ ...r, qty: +r.qty }));
   if (S.alegra) S.alegra.supplierLinks = Object.fromEntries(S.suppliers.map((s) => [s.id, s.alegraId || ''])); // vínculos reales del servidor
@@ -285,6 +288,8 @@ remote.load = async () => {
   const itemRows = S.alegra ? await tryGet('/alegra/items/links') : null; // consulta el catálogo de Alegra (solo administradores)
   if (S.alegra && Array.isArray(itemRows)) S.alegra.items = itemRows.map((r) => ({ id: r.alegraItemId, name: r.alegraName, reference: r.reference || '' }));
 };
+const _runRecon = runRecon;
+runRecon = function () { if (S.settings.mode === 'api' && S.reconApi) { S.recon = S.reconApi; return S.recon; } return _runRecon(); };
 const _newInvoice = newInvoice;
 newInvoice = function () { _newInvoice(); if (S.settings.mode === 'api') { const l = S.billing.lines[S.billing.lines.length - 1]; l.localDraft = true; l.inv = 'BORRADOR-' + Date.now().toString(36).toUpperCase().slice(-4); save(); render(); } };
 const _emitInvoice = emitInvoice;

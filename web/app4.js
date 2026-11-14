@@ -95,7 +95,7 @@ RENDER.conciliacion = () => {
 BIND.conciliacion = (el) => {
   $('#rc-run', el).onclick = async () => {
     if (S.settings.mode === 'api') {
-      try { await remote.load(); const r = await remote.req('/api/v1/reconciliation/run', { method: 'POST' }); runRecon(); S.recon = { ...S.recon, ts: new Date().toISOString(), runId: r.runId }; save(); render(); toast('Conciliación actualizada y guardada en el historial'); }
+      try { await remote.load(); const r = await remote.req('/api/v1/reconciliation/run', { method: 'POST' }); S.reconApi = S.recon = { ts: new Date().toISOString(), ...r }; save(); render(); toast('Conciliación actualizada y guardada en el historial'); }
       catch (e) { toast('No se pudo conciliar: ' + e.message); }
       return;
     }

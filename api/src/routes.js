@@ -308,16 +308,22 @@ r.post('/sheets/apply', can('SUPERVISOR'), validate(z.object({ decisions: z.arra
 r.get('/sheets/rows', perm('sheets.sincronizar'), asyncH(async (req, res) => res.json(await prisma.importRow.findMany({ where: { sourceId: req.query.sourceId, status: req.query.status }, orderBy: { importedAt: 'desc' }, take: 300 }))));
 
 /* ============ Conciliación ============ */
-async function runReconciliation(userId) {
-  const products = (await prisma.product.findMany({ include: { category: true } })).map(toCoreProduct);
+/** Concilia con TODOS los movimientos aprobados (el navegador solo trae los más recientes). */
+async function computeReconciliation() {
+  const products = (await prisma.product.findMany({ where: { kind: { not: 'servicio' } }, include: { category: true } })).map(toCoreProduct);
   const movements = (await prisma.movement.findMany({ where: { status: 'aprobado' } })).map(toCoreMovement);
   const counts = (await prisma.physicalCount.findMany()).map((c) => ({ ...c, qty: n(c.qty) }));
   const unmatchedInbox = await prisma.inboxItem.findMany({ where: { status: 'requiere_info' }, take: 50 });
   const unmatched = unmatchedInbox.flatMap((i) => (i.analysis?.items || []).filter((x) => !x.productId).map((x) => ({ rawText: x.rawText, source: 'whatsapp' })));
-  const result = reconcile({ products, movements, counts, unmatched, minorPct: config.rules.minorPct, minorAbs: config.rules.minorAbs });
+  return reconcile({ products, movements, counts, unmatched, minorPct: config.rules.minorPct, minorAbs: config.rules.minorAbs });
+}
+async function runReconciliation(userId) {
+  const result = await computeReconciliation();
   const run = await prisma.reconciliationRun.create({ data: { byUserId: userId, totals: result.totals, rows: result.rows } });
   return { runId: run.id, ...result };
 }
+/** Conciliación al momento, sin guardarla en el historial: la usan el tablero, Conciliación e Inteligencia. */
+r.get('/reconciliation/current', perm(['conciliacion.ver', 'tablero.ver', 'inteligencia.ver']), moneyGuard, asyncH(async (_q, res) => res.json({ ts: new Date(), ...(await computeReconciliation()) })));
 r.post('/reconciliation/run', perm('conciliacion.ver'), asyncH(async (req, res) => {
   const out = await runReconciliation(req.user.sub);
   await audit(req, 'reconciliation.run', 'ReconciliationRun', out.runId, null, out.totals);
