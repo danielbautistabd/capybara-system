@@ -271,7 +271,7 @@ remote.load = async () => {
   const [rows, users, roles] = await Promise.all([tryGet('/invoices?format=rows'), tryGet('/users'), tryGet('/roles')]);
   if (rows) {
     const status = {};
-    for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId, tab: r.tab || null };
+    for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId, tab: r.tab || null, doc: r.customerDoc || null, docType: r.customerDocType || null };
     const mem = (S.billing?.lines || []).filter(isLocalDraftLine);
     // al abrir la página se recuperan del navegador; después manda lo que hay en memoria (emitir un borrador lo quita)
     const drafts = S.billing?.fromApi ? mem : store.get(draftsKey(), []).filter(isLocalDraftLine);

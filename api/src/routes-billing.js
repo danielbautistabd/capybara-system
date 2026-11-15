@@ -13,7 +13,7 @@ const r = Router();
 r.use(auth);
 
 const lineSchema = z.object({ productId: z.string(), qty: z.number().positive(), price: z.number().min(0), taxPct: z.union([z.literal(0), z.literal(5), z.literal(8), z.literal(19)]) });
-const invSchema = z.object({ date: z.coerce.date(), customerName: z.string().min(2), customerDoc: z.string().optional(), room: z.string().optional(), payMethod: z.string(), notes: z.string().optional(), lines: z.array(lineSchema).min(1) });
+const invSchema = z.object({ date: z.coerce.date(), customerName: z.string().min(2), customerDoc: z.string().optional(), customerDocType: z.enum(['CC', 'CE', 'NIT', 'PP', 'DIE']).optional().nullable(), room: z.string().optional(), payMethod: z.string(), notes: z.string().optional(), lines: z.array(lineSchema).min(1) });
 const totals = (lines) => { let sub = 0, tax = 0; for (const l of lines) { const s = l.qty * l.price; sub += s; tax += Math.round((s * l.taxPct) / 100); } return { subtotal: sub, tax, total: sub + tax }; };
 
 async function nextNumber() {
@@ -27,7 +27,7 @@ r.get('/invoices', perm('facturacion.crear'), asyncH(async (req, res) => {
   if (req.query.from || req.query.to) where.date = { gte: req.query.from ? new Date(req.query.from) : undefined, lte: req.query.to ? new Date(req.query.to) : undefined };
   if (req.query.status) where.status = req.query.status;
   const list = await prisma.salesInvoice.findMany({ where, orderBy: { number: 'asc' }, take: 500, include: { lines: { orderBy: { position: 'asc' } } } });
-  if (req.query.format === 'rows') return res.json(list.flatMap((i) => i.lines.map((l) => ({ id: l.id, inv: i.number, invoiceId: i.id, date: i.date.toISOString().slice(0, 10), customer: i.customerName, room: i.room, productId: l.productId, qty: n(l.qty), price: n(l.price), taxPct: n(l.taxPct), pay: i.payMethod, status: i.status, issuedBy: i.issuedBy, alegra: i.alegraInvoiceId, tab: (i.notes || '').match(/CTA-\d+/)?.[0] || null }))));
+  if (req.query.format === 'rows') return res.json(list.flatMap((i) => i.lines.map((l) => ({ id: l.id, inv: i.number, invoiceId: i.id, date: i.date.toISOString().slice(0, 10), customer: i.customerName, room: i.room, productId: l.productId, qty: n(l.qty), price: n(l.price), taxPct: n(l.taxPct), pay: i.payMethod, status: i.status, issuedBy: i.issuedBy, alegra: i.alegraInvoiceId, tab: (i.notes || '').match(/CTA-\d+/)?.[0] || null, customerDoc: i.customerDoc, customerDocType: i.customerDocType }))));
   res.json(list);
 }));
 r.post('/invoices', perm('facturacion.crear'), validate(invSchema), asyncH(async (req, res) => {

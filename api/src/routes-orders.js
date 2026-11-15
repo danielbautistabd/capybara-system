@@ -15,6 +15,7 @@ const r = Router();
 r.use(auth);
 
 const TAX = [0, 5, 8, 19];
+export const DOC_TYPES = ['CC', 'CE', 'NIT', 'PP', 'DIE']; // cédula, cédula de extranjería, NIT, pasaporte, documento extranjero
 /** Impuesto por defecto: el del producto o, si no tiene, INC 8 % en bar y restaurante e IVA 19 % en lo demás. */
 export const defaultTaxPct = (p) => (p?.saleTaxPct != null ? Number(p.saleTaxPct) : ['Bebidas', 'Licores', 'Alimentos', 'Servicios'].includes(p?.category?.name) ? 8 : 19);
 /** Fecha de hoy en Colombia (AAAA-MM-DD) para la factura. */
@@ -47,7 +48,7 @@ r.get('/orders/tabs', perm(['facturacion.crear', 'facturacion.emitir']), asyncH(
   res.json(tabs.map(tabOut));
 }));
 
-const tabSchema = z.object({ customerName: z.string().trim().min(2, 'Escribe el nombre del huésped o cliente'), room: z.string().trim().max(40).optional().nullable(), customerDoc: z.string().trim().max(30).optional().nullable(), notes: z.string().max(500).optional().nullable() });
+const tabSchema = z.object({ customerName: z.string().trim().min(2, 'Escribe el nombre del huésped o cliente'), room: z.string().trim().max(40).optional().nullable(), customerDoc: z.string().trim().max(30).optional().nullable(), customerDocType: z.enum(DOC_TYPES).optional().nullable(), notes: z.string().max(500).optional().nullable() });
 r.post('/orders/tabs', perm('facturacion.crear'), validate(tabSchema), asyncH(async (req, res) => {
   const t = await prisma.orderTab.create({ data: { ...req.body, number: await nextTabNumber(), openedBy: req.user.name }, include: LINES });
   await audit(req, 'cuenta.abrir', 'OrderTab', t.id, null, { number: t.number, cliente: t.customerName, room: t.room });
@@ -105,7 +106,7 @@ r.post('/orders/tabs/:id/void', perm('facturacion.emitir'), validate(z.object({ 
 
 /** Cerrar la cuenta: UNA factura con todos los pedidos vigentes, emitida en el acto (descuenta inventario).
  *  Queda lista para la revisión de Alegra. */
-r.post('/orders/tabs/:id/close', perm('facturacion.emitir'), validate(z.object({ payMethod: z.string().trim().min(2, 'Elige la forma de pago'), customerDoc: z.string().trim().max(30).optional().nullable(), customerName: z.string().trim().min(2).optional() })), asyncH(async (req, res) => {
+r.post('/orders/tabs/:id/close', perm('facturacion.emitir'), validate(z.object({ payMethod: z.string().trim().min(2, 'Elige la forma de pago'), customerDoc: z.string().trim().max(30).optional().nullable(), customerDocType: z.enum(DOC_TYPES).optional().nullable(), customerName: z.string().trim().min(2).optional() })), asyncH(async (req, res) => {
   // Bloqueo optimista: solo una persona puede cerrar la cuenta a la vez.
   const lock = await prisma.orderTab.updateMany({ where: { id: req.params.id, status: 'abierta' }, data: { status: 'cerrando' } });
   if (!lock.count) { const t = await prisma.orderTab.findUnique({ where: { id: req.params.id } }); throw new HttpError(t ? 409 : 404, t ? `La cuenta ${t.number} ya está ${t.status}` : 'La cuenta no existe'); }
@@ -114,13 +115,13 @@ r.post('/orders/tabs/:id/close', perm('facturacion.emitir'), validate(z.object({
     if (!t.lines.length) throw new HttpError(400, `La cuenta ${t.number} no tiene pedidos para facturar`);
     const lines = t.lines.map((l, i) => ({ productId: l.productId, qty: n(l.qty), price: n(l.price), taxPct: l.taxPct, position: i }));
     const inv = await prisma.salesInvoice.create({ data: {
-      number: await nextNumber(), date: new Date(todayCO()), customerName: req.body.customerName || t.customerName, customerDoc: req.body.customerDoc ?? t.customerDoc, room: t.room,
+      number: await nextNumber(), date: new Date(todayCO()), customerName: req.body.customerName || t.customerName, customerDoc: req.body.customerDoc ?? t.customerDoc, customerDocType: (req.body.customerDoc ?? t.customerDoc) ? (req.body.customerDocType ?? t.customerDocType ?? 'CC') : null, room: t.room,
       payMethod: req.body.payMethod, notes: `Cuenta ${t.number}`, createdBy: req.user.name, ...totals(lines), lines: { create: lines },
     } });
     const out = await issueInvoice(inv.id, req.user);
     await prisma.$transaction([
       prisma.orderLine.updateMany({ where: { tabId: t.id, status: 'pedido' }, data: { status: 'facturado' } }),
-      prisma.orderTab.update({ where: { id: t.id }, data: { status: 'cerrada', closedAt: new Date(), closedBy: req.user.name, payMethod: req.body.payMethod, invoiceId: inv.id, ...(req.body.customerDoc ? { customerDoc: req.body.customerDoc } : {}) } }),
+      prisma.orderTab.update({ where: { id: t.id }, data: { status: 'cerrada', closedAt: new Date(), closedBy: req.user.name, payMethod: req.body.payMethod, invoiceId: inv.id, ...(req.body.customerDoc ? { customerDoc: req.body.customerDoc, customerDocType: req.body.customerDocType ?? t.customerDocType ?? 'CC' } : {}) } }),
     ]);
     await audit(req, 'cuenta.cerrar', 'OrderTab', t.id, null, { number: t.number, factura: inv.number, total: out.total, pedidos: lines.length });
     syncOrdersSheet('cierre', req.user.sub).catch(() => {}); // el registro en Drive no frena el cobro; la tarea cada 15 min lo repone

@@ -4891,7 +4891,7 @@ remote.load = async () => {
   const [rows, users, roles] = await Promise.all([tryGet('/invoices?format=rows'), tryGet('/users'), tryGet('/roles')]);
   if (rows) {
     const status = {};
-    for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId, tab: r.tab || null };
+    for (const r of rows) status[r.inv] = { st: r.status, by: r.issuedBy || '', alegra: r.alegra || null, invoiceId: r.invoiceId, tab: r.tab || null, doc: r.customerDoc || null, docType: r.customerDocType || null };
     const mem = (S.billing?.lines || []).filter(isLocalDraftLine);
     // al abrir la página se recuperan del navegador; después manda lo que hay en memoria (emitir un borrador lo quita)
     const drafts = S.billing?.fromApi ? mem : store.get(draftsKey(), []).filter(isLocalDraftLine);
@@ -5018,6 +5018,8 @@ const fHora = (ts) => new Date(ts).toLocaleTimeString('es-CO', { hour: '2-digit'
 const fDia = (ts) => new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
 const invNumberById = (id) => (id ? Object.entries(S.billing?.status || {}).find(([, v]) => v.invoiceId === id)?.[0] || '' : '');
 const ORD_ST = { pedido: 'Pedido', anulado: 'Anulado', facturado: 'Facturado' };
+const DOC_TYPES = [['CC', 'Cédula'], ['CE', 'Cédula de extranjería'], ['PP', 'Pasaporte'], ['NIT', 'NIT (empresa)'], ['DIE', 'Documento extranjero']];
+const docTypeSel = (id, v) => `<select class="in" id="${id}" aria-label="Tipo de documento">${DOC_TYPES.map(([k, l]) => opt(k, l, v || 'CC')).join('')}</select>`;
 
 async function loadOrders() {
   // Se llama al iniciar sesión, antes de que el modo quede en 'api': basta con tener sesión.
@@ -5166,10 +5168,10 @@ function tabForm(t = null) {
   const m = modal({ title: t ? `Editar cuenta ${esc(t.number)}` : 'Nueva cuenta', body: `
     <div class="grid g2"><div class="field"><label for="tf-name">Huésped o cliente</label><input class="in" id="tf-name" value="${esc(t?.customerName || '')}" placeholder="Nombre"></div>
     <div class="field"><label for="tf-room">Habitación, cama o punto</label><input class="in" id="tf-room" value="${esc(t?.room || '')}" placeholder="203 · Cama 4 · Bar · Terraza"></div></div>
-    <div class="field"><label for="tf-doc">Documento (opcional, para la factura)</label><input class="in" id="tf-doc" value="${esc(t?.customerDoc || '')}" placeholder="Cédula, pasaporte o NIT"></div>`,
+    <div class="grid g2"><div class="field"><label for="tf-doctype">Tipo de documento</label>${docTypeSel('tf-doctype', t?.customerDocType)}</div><div class="field"><label for="tf-doc">Documento (opcional, para la factura a su nombre)</label><input class="in" id="tf-doc" value="${esc(t?.customerDoc || '')}" placeholder="Número"></div></div>`,
     foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="tf-ok">${t ? 'Guardar' : 'Abrir cuenta'}</button>` });
   const go = async () => {
-    const body = { customerName: m.querySelector('#tf-name').value.trim(), room: m.querySelector('#tf-room').value.trim() || null, customerDoc: m.querySelector('#tf-doc').value.trim() || null };
+    const body = { customerName: m.querySelector('#tf-name').value.trim(), room: m.querySelector('#tf-room').value.trim() || null, customerDoc: m.querySelector('#tf-doc').value.trim() || null, customerDocType: m.querySelector('#tf-doc').value.trim() ? m.querySelector('#tf-doctype').value : null };
     if (body.customerName.length < 2) return toast('Escribe el nombre del huésped o cliente.');
     try {
       const out = await remote.req(t ? `/api/v1/orders/tabs/${t.id}` : '/api/v1/orders/tabs', { method: t ? 'PATCH' : 'POST', body });
@@ -5189,13 +5191,13 @@ function closeTabModal(t) {
     ${live.map((l) => { const sub = l.qty * l.price; return `<tr><td>${esc(l.product)}</td><td class="n num">${num(l.qty)}</td><td class="n num">${money(l.price)}</td><td class="n num">${money(sub + Math.round((sub * l.taxPct) / 100))}</td><td class="small">${esc(l.waiter)}</td></tr>`; }).join('')}
     </tbody><tfoot><tr><td colspan="3"><b>Total a cobrar</b> <span class="muted small">(${money(t.subtotal)} + impuestos ${money(t.tax)})</span></td><td class="n num"><b>${money(t.total)}</b></td><td></td></tr></tfoot></table></div>
     <div class="grid g2" style="margin-top:10px"><div class="field"><label for="ct-pay">Forma de pago</label><select class="in" id="ct-pay">${pays.map((p) => opt(p, p, 'Efectivo')).join('')}</select></div>
-    <div class="field"><label for="ct-doc">Documento del cliente</label><input class="in" id="ct-doc" value="${esc(t.customerDoc || '')}" placeholder="Opcional"></div></div>
-    <p class="muted small" style="margin:0">Se crea una factura con estos pedidos, se descuenta el inventario y queda en <b>Para Alegra</b> para revisión.</p>`,
+    <div class="field"><label for="ct-doc">Documento del cliente</label><div class="row" style="gap:6px;flex-wrap:nowrap">${docTypeSel('ct-doctype', t.customerDocType)}<input class="in" id="ct-doc" value="${esc(t.customerDoc || '')}" placeholder="Vacío = consumidor final"></div></div></div>
+    <p class="muted small" style="margin:0">Se crea una factura con estos pedidos, se descuenta el inventario y queda en <b>Para Alegra</b> para revisión. Con documento, la factura sale a nombre del huésped (si no está en Alegra, se crea al enviarla); sin documento, a consumidor final.</p>`,
     foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="ct-ok">${ic('check')} Facturar ${money(t.total)}</button>` });
   m.querySelector('#ct-ok').onclick = async (ev) => {
     ev.target.disabled = true;
     try {
-      const r = await remote.req(`/api/v1/orders/tabs/${t.id}/close`, { method: 'POST', body: { payMethod: m.querySelector('#ct-pay').value, customerDoc: m.querySelector('#ct-doc').value.trim() || null } });
+      const r = await remote.req(`/api/v1/orders/tabs/${t.id}/close`, { method: 'POST', body: { payMethod: m.querySelector('#ct-pay').value, customerDoc: m.querySelector('#ct-doc').value.trim() || null, customerDocType: m.querySelector('#ct-doctype').value } });
       closeModal(); await remote.load(); save(); render();
       toast(`${t.number} cerrada: factura ${r.invoice.number} por ${money(r.invoice.total)}${r.warnings?.length ? ' · ' + r.warnings.join('; ') : ''}`);
     } catch (e) { ev.target.disabled = false; toast('No se cerró la cuenta: ' + e.message); }
@@ -5271,6 +5273,7 @@ function alegraDef() {
     title: 'Para Alegra', noDelete: true, rows, locked: () => true,
     cols: [
       { k: 'date', h: 'Fecha', w: 100, t: 'date' }, { k: 'inv', h: 'Factura', w: 92, t: 'text' }, { k: 'customer', h: 'Cliente / huésped', w: 170, t: 'text' }, { k: 'room', h: 'Hab. / punto', w: 92, t: 'text' },
+      { num: false, k: 'cliente', h: 'Se factura a', w: 150, t: 'calc', f: (r) => (S.billing.status[r.inv]?.doc ? `${S.billing.status[r.inv].docType || 'CC'} ${S.billing.status[r.inv].doc}` : 'Consumidor final') },
       { num: false, k: 'cuenta', h: 'Cuenta', w: 92, t: 'calc', f: (r) => S.billing.status[r.inv]?.tab || '' },
       { k: 'lines', h: 'Líneas', w: 64, t: 'num' }, { k: 'sub', h: 'Subtotal', w: 104, t: 'money' }, { k: 'tax', h: 'Impuestos', w: 96, t: 'money' }, { k: 'total', h: 'Total', w: 108, t: 'money' },
       { k: 'pay', h: 'Pago', w: 104, t: 'text' }, { k: 'by', h: 'Emitió', w: 120, t: 'text' },
@@ -5287,9 +5290,10 @@ function alegraDef() {
       const send = async (list) => {
         ALG.sending = true; render();
         const ok = [], bad = [];
-        for (const r of list) { try { const x = await remote.req(`/api/v1/invoices/${r.invoiceId}/alegra`, { method: 'POST' }); ok.push(`${r.inv}→${x.alegraInvoiceId}`); } catch (e) { bad.push(`${r.inv}: ${e.message}`); } }
+        let nuevos = 0;
+        for (const r of list) { try { const x = await remote.req(`/api/v1/invoices/${r.invoiceId}/alegra`, { method: 'POST' }); ok.push(`${r.inv}→${x.alegraInvoiceId}`); if (x.clientCreated) nuevos++; } catch (e) { bad.push(`${r.inv}: ${e.message}`); } }
         ALG.sending = false; await remote.load(); save(); render();
-        toast(`${ok.length} enviadas a Alegra${bad.length ? ` · ${bad.length} con error: ${bad.join('; ')}` : ''}`);
+        toast(`${ok.length} enviadas a Alegra${nuevos ? ` · ${nuevos} ${nuevos === 1 ? 'cliente nuevo creado' : 'clientes nuevos creados'} en Alegra` : ''}${bad.length ? ` · ${bad.length} con error: ${bad.join('; ')}` : ''}`);
       };
       $('#al-all', el)?.addEventListener('click', async () => { const list = sheetDef().rows.filter((r) => !r.missing.length); if (await ask({ title: 'Enviar a Alegra', text: `Se enviarán <b>${list.length}</b> facturas por <b>${money(list.reduce((a, x) => a + x.total, 0))}</b>. Revisa cliente, valores y forma de pago antes de continuar.`, label: 'Enviar a Alegra' })) send(list); });
       $('#al-link', el)?.addEventListener('click', () => { location.hash = 'alegra'; toast('Vincula cada producto con su ítem de Alegra y vuelve a Para Alegra.'); });

@@ -424,6 +424,7 @@ model SalesInvoice {
   date            DateTime
   customerName    String
   customerDoc     String? // cédula / pasaporte / NIT
+  customerDocType String? // CC | CE | NIT | PP | DIE (para crear el cliente en Alegra)
   room            String? // habitación o punto de venta (Bar)
   payMethod       String
   status          String             @default("borrador") // borrador | emitida | anulada
@@ -458,21 +459,22 @@ model Sequence {
 
 /// Cuenta abierta de un huésped, habitación o mesa: acumula pedidos y al cerrarse genera UNA factura.
 model OrderTab {
-  id           String      @id @default(cuid())
-  number       String      @unique // CTA-0001
-  customerName String
-  customerDoc  String?
-  room         String? // habitación, cama o punto (Bar, Terraza)
-  status       String      @default("abierta") // abierta | cerrada | anulada
-  openedAt     DateTime    @default(now())
-  openedBy     String
-  closedAt     DateTime?
-  closedBy     String?
-  payMethod    String?
-  invoiceId    String?     @unique // SalesInvoice generada al cerrar
-  voidReason   String?
-  notes        String?
-  lines        OrderLine[]
+  id              String      @id @default(cuid())
+  number          String      @unique // CTA-0001
+  customerName    String
+  customerDoc     String?
+  customerDocType String?
+  room            String? // habitación, cama o punto (Bar, Terraza)
+  status          String      @default("abierta") // abierta | cerrada | anulada
+  openedAt        DateTime    @default(now())
+  openedBy        String
+  closedAt        DateTime?
+  closedBy        String?
+  payMethod       String?
+  invoiceId       String?     @unique // SalesInvoice generada al cerrar
+  voidReason      String?
+  notes           String?
+  lines           OrderLine[]
 
   @@index([status, openedAt])
 }

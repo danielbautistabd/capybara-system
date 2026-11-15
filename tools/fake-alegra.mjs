@@ -4,6 +4,7 @@ import fs from 'node:fs';
 const LOG = process.env.FAKE_ALEGRA_LOG || new URL('../api/uploads/alegra-simulado.json', import.meta.url).pathname;
 const calls = [];
 // ítems de ejemplo: uno con referencia igual al código de Capybara, otros solo por nombre
+const CONTACTS = []; // clientes creados en esta sesión
 const ITEMS = [
   { id: 301, name: 'Cerveza Club Colombia x330', reference: 'BEB-001' },
   { id: 302, name: 'Cerveza Aguila 330', reference: '' },
@@ -33,6 +34,8 @@ http.createServer((req, res) => {
     if (req.method === 'GET' && p === '/company') return send(200, { name: 'Capybara Hostel SAS' });
     if (req.method === 'GET' && p === '/bills') { const s = +(url.searchParams.get('start') || 0), l = +(url.searchParams.get('limit') || 30); return send(200, BILLS.slice(s, s + l)); }
     if (req.method === 'GET' && p === '/items') { const s = +(url.searchParams.get('start') || 0), l = +(url.searchParams.get('limit') || 30); return send(200, ITEMS.slice(s, s + l)); }
+    if (req.method === 'GET' && p === '/contacts' && url.searchParams.get('identification')) return send(200, CONTACTS.filter((c) => c.identificationObject?.number === url.searchParams.get('identification')));
+    if (req.method === 'POST' && p === '/contacts') { const c = { id: next++, ...body }; CONTACTS.push(c); return send(201, c); }
     if (req.method === 'GET') return send(200, []);
     if (req.method === 'POST' && ['/invoices', '/bills', '/payments', '/contacts', '/purchase-orders'].includes(p)) return send(201, { id: next++ });
     send(404, { message: 'no simulado: ' + p });

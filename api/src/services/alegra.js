@@ -276,8 +276,24 @@ export async function pushSalesInvoice(invoiceId) {
   if (!inv) throw Object.assign(new Error('Factura no encontrada'), { status: 404, expose: true });
   if (inv.alegraInvoiceId) return { alegraInvoiceId: inv.alegraInvoiceId, already: true };
   if (inv.status !== 'emitida') throw Object.assign(new Error('Solo se envían facturas emitidas'), { status: 409, expose: true });
-  let clientId = config.alegra.defaultClientId;
-  if (inv.customerDoc) { const c = await call('/contacts', { query: { identification: inv.customerDoc, limit: 1 } }); if (c?.[0]?.id) clientId = String(c[0].id); }
+  // Cliente: con documento se busca en Alegra y, si no existe, se crea (nunca se factura en silencio a consumidor final).
+  let clientId = config.alegra.defaultClientId, clientCreated = false;
+  if (inv.customerDoc) {
+    const doc = String(inv.customerDoc).replace(/[.\s]/g, '');
+    const c = await call('/contacts', { query: { identification: doc.split('-')[0], limit: 1 } });
+    if (c?.[0]?.id) clientId = String(c[0].id);
+    else {
+      const type = inv.customerDocType || 'CC';
+      // Colombia usa identificationObject; verifica tipos y campos con tu cuenta (kindOfPerson / regime pueden variar).
+      const nc = await call('/contacts', { method: 'POST', body: {
+        name: inv.customerName, type: ['client'],
+        identificationObject: { type, number: doc.split('-')[0], ...(type === 'NIT' && doc.includes('-') ? { dv: doc.split('-')[1] } : {}) },
+        kindOfPerson: type === 'NIT' ? 'LEGAL_ENTITY' : 'PERSON_ENTITY', ignoreRepeated: true,
+      } });
+      clientId = String(nc.id); clientCreated = true;
+      await log('cliente.crear', 'ok', `${inv.customerName} · ${type} ${doc} → Alegra ${nc.id}`, String(nc.id));
+    }
+  }
   if (!clientId) throw Object.assign(new Error('Falta ALEGRA_DEFAULT_CLIENT_ID (cliente consumidor final)'), { status: 409, expose: true });
   const prods = await prisma.product.findMany({ where: { id: { in: inv.lines.map((l) => l.productId) } } });
   const missing = prods.filter((p) => !p.alegraItemId).map((p) => p.name);
@@ -287,10 +303,10 @@ export async function pushSalesInvoice(invoiceId) {
   const body = {
     date, dueDate: date, client: { id: clientId }, paymentForm: 'CASH',
     items: inv.lines.map((l) => ({ id: prods.find((p) => p.id === l.productId).alegraItemId, price: n(l.price), quantity: n(l.qty), tax: taxOf(l.taxPct) })),
-    observations: `Capybara Control ${inv.number} · ${inv.customerName}${inv.room ? ' · hab. ' + inv.room : ''}`.slice(0, 500),
+    observations: `Capybara Control ${inv.number} · ${inv.customerName}${inv.room ? ' · hab. ' + inv.room : ''} · pago: ${inv.payMethod}${inv.notes ? ' · ' + inv.notes : ''}`.slice(0, 500),
   };
   const a = await call('/invoices', { method: 'POST', body });
   await prisma.salesInvoice.update({ where: { id: inv.id }, data: { alegraInvoiceId: String(a.id) } });
   await log('venta.exportar', 'ok', `${inv.number} → Alegra ${a.id}`, String(a.id));
-  return { alegraInvoiceId: String(a.id) };
+  return { alegraInvoiceId: String(a.id), clientId, clientCreated };
 }
