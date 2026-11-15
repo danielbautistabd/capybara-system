@@ -492,6 +492,25 @@ td:first-child:has(.sub) b{min-width:150px}
 /* Supabase: capa de carga */
 .cloud-ov{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 70%,transparent);padding:16px}
 .cloud-ov .card{display:grid;gap:6px;max-width:340px;text-align:center}
+
+/* Pedido rápido (celular del mesero) */
+.qo-modal .modal-b{gap:10px}
+.qo-cats{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.qo-cats .chip{flex:none;border:1px solid var(--line);background:var(--surface);color:inherit;border-radius:999px;padding:6px 12px;font:inherit;font-size:.85rem;cursor:pointer}
+.qo-cats .chip.on{background:var(--jungle-2);border-color:transparent;color:#fff}
+.qo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+.qo-tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-height:64px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:inherit;font:inherit;text-align:left;cursor:pointer}
+.qo-tile:active{transform:scale(.98)}
+.qo-tile.on{border-color:var(--jungle-2);box-shadow:0 0 0 1px var(--jungle-2) inset}
+.qo-n{font-size:.88rem;line-height:1.2;padding-right:22px}
+.qo-p{font-size:.8rem;opacity:.7}
+.qo-b{position:absolute;top:6px;right:6px;min-width:22px;height:22px;border-radius:11px;background:var(--jungle-2);color:#fff;font-size:.78rem;display:grid;place-items:center;padding:0 6px}
+.qo-cart{border:1px solid var(--line);border-radius:12px;padding:6px 10px}
+.qo-line{display:grid;grid-template-columns:1fr auto 96px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}
+.qo-line:last-child{border-bottom:0}
+.qo-line .num{text-align:right}
+.qo-tot{font-size:.95rem}
+@media (max-width:640px){.qo-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.qo-modal .modal-f{position:sticky;bottom:0;background:var(--surface)}.qo-modal .modal-f .btn.pri{flex:1}}
 </style>
 <div class="app">
   <aside class="side" aria-label="Menú principal">
@@ -5112,17 +5131,20 @@ function pedidosToolbar(row) {
   const t = row?._tab;
   const live = t ? t.lines.filter((l) => l.status !== 'anulado') : [];
   return `
-    ${can('facturacion.crear') ? `<button class="btn sm" id="or-newtab">${ic('plus')} Nueva cuenta</button><button class="btn sm pri" id="or-newline" ${ordOpenTabs().length ? '' : 'disabled title="Primero abre una cuenta"'}>${ic('plus')} Nuevo pedido</button>` : ''}
+    ${can('facturacion.crear') ? `<button class="btn sm pri" id="or-quick">${ic('plus')} Pedido rápido</button><button class="btn sm" id="or-newtab">Nueva cuenta</button><button class="btn sm" id="or-newline" ${ordOpenTabs().length ? '' : 'disabled title="Primero abre una cuenta"'}>Fila nueva</button>` : ''}
     ${row && !row._draft && row.status === 'pedido' && t?.status === 'abierta' && can('facturacion.crear') ? `<button class="btn sm ghost" id="or-voidline">${ic('x')} Anular pedido</button>` : ''}
     ${row?._draft ? `<button class="btn sm ghost" id="or-dropdraft">${ic('x')} Quitar fila</button>` : ''}
     <label class="row small" style="gap:4px"><input type="checkbox" id="or-closed" ${ORD.showClosed ? 'checked' : ''}> Ver cerradas (7 días)</label>
     ${driveHtml()}
     ${t ? `<span class="gs-sep"></span><span class="small">Cuenta <b class="mono">${esc(t.number)}</b> · ${esc(t.customerName)}${t.room ? ' · ' + esc(t.room) : ''} · ${live.length} ${live.length === 1 ? 'pedido' : 'pedidos'} · <b class="num">${money(t.total)}</b></span>
+      ${t.status === 'abierta' ? `<button class="btn sm" id="or-prebill">Pre-cuenta</button>` : ''}
       ${t.status === 'abierta' && can('facturacion.emitir') ? `<button class="btn sm pri" id="or-close">${ic('check')} Cerrar y facturar</button><button class="btn sm ghost" id="or-voidtab">Anular cuenta</button>` : ''}
       ${t.status === 'abierta' && !can('facturacion.emitir') ? pill('Caja o un manager cierra la cuenta', 'p-info') : ''}` : ''}`;
 }
 function pedidosBind(el) {
   driveBind(el);
+  $('#or-quick', el)?.addEventListener('click', () => quickOrderModal(sheetDef().rows?.[SH.r]?._tab?.status === 'abierta' ? sheetDef().rows[SH.r]._tab.id : ''));
+  $('#or-prebill', el)?.addEventListener('click', () => preBill(sheetDef().rows[SH.r]._tab));
   $('#or-newtab', el)?.addEventListener('click', () => tabForm());
   $('#or-newline', el)?.addEventListener('click', () => newOrderLine());
   $('#or-dropdraft', el)?.addEventListener('click', () => { const r = sheetDef().rows[SH.r]; ORD.drafts = ORD.drafts.filter((x) => x.id !== r.id); SH.r = Math.max(0, SH.r - 1); render(); });
@@ -5222,10 +5244,10 @@ function cuentasDef() {
       ${can('facturacion.crear') ? `<button class="btn sm" id="or-newtab">${ic('plus')} Nueva cuenta</button>` : ''}
       <label class="row small" style="gap:4px"><input type="checkbox" id="or-closed" ${ORD.showClosed ? 'checked' : ''}> Ver cerradas (7 días)</label>
       ${driveHtml()}
-      ${t && t.status === 'abierta' ? `<span class="gs-sep"></span>${can('facturacion.crear') ? `<button class="btn sm" id="or-addto">${ic('plus')} Pedido para ${esc(t.number)}</button>` : ''}${can('facturacion.emitir') ? `<button class="btn sm pri" id="or-close">${ic('check')} Cerrar y facturar ${money(t.total)}</button><button class="btn sm ghost" id="or-voidtab">Anular cuenta</button>` : ''}` : ''}`,
+      ${t && t.status === 'abierta' ? `<span class="gs-sep"></span>${can('facturacion.crear') ? `<button class="btn sm" id="or-addto">${ic('plus')} Pedido para ${esc(t.number)}</button>` : ''}<button class="btn sm" id="or-prebill">Pre-cuenta</button>${can('facturacion.emitir') ? `<button class="btn sm pri" id="or-close">${ic('check')} Cerrar y facturar ${money(t.total)}</button><button class="btn sm ghost" id="or-voidtab">Anular cuenta</button>` : ''}` : ''}`,
     bind: (el) => {
       pedidosBind(el);
-      $('#or-addto', el)?.addEventListener('click', () => { const t = sheetDef().rows[SH.r]; SH.tab = 'pedidos'; newOrderLine(t.id); });
+      $('#or-addto', el)?.addEventListener('click', () => quickOrderModal(sheetDef().rows[SH.r].id));
     },
     footer: () => `<p class="muted small" style="margin:0">Una fila por cuenta. Puedes corregir el nombre, la habitación y el documento mientras la cuenta esté abierta.</p>`,
   };
@@ -5281,6 +5303,97 @@ function alegraDef() {
     footer: () => `<p class="muted small" style="margin:0">Facturas emitidas que todavía no están en Alegra. Revisa cliente, valores y forma de pago y envía en bloque las listas; cada una queda con su número de Alegra en Ventas, Pedidos y Cuentas. Las que tienen productos sin vincular a un ítem de Alegra no se envían hasta vincularlos (pantalla Alegra).</p>`,
   };
 }
+
+/* ---------- Pedido rápido (pensado para el celular del mesero) y pre-cuenta ---------- */
+let QO = { tabId: '', newTab: false, q: '', cat: '', cart: {}, name: '', room: '' };
+const sellable = () => S.products.filter((p) => p.status === 'activo' && p.kind !== 'activo' && p.kind !== 'menaje' && (+p.salePrice > 0 || p.kind === 'servicio'));
+function quickOrderModal(tabId = '') {
+  if (!ordApi()) return toast('Los pedidos funcionan con el servidor conectado.');
+  const open = ordOpenTabs();
+  QO = { tabId: tabId || (open.length ? open[open.length - 1].id : ''), newTab: !open.length, q: '', cat: '', cart: {}, name: '', room: '' };
+  const m = modal({ title: 'Pedido rápido', wide: true, body: '<div id="qo"></div>', foot: `<button class="btn" data-close>Cancelar</button><button class="btn pri" id="qo-send" disabled>Enviar pedido</button>` });
+  m.classList.add('qo-modal');
+  const draw = () => {
+    const tabs = ordOpenTabs();
+    const cats = [...new Set(sellable().map((p) => p.category).filter(Boolean))].sort();
+    const q = normalize(QO.q);
+    const list = sellable().filter((p) => (!QO.cat || p.category === QO.cat) && (!q || normalize(`${p.name} ${(p.aliases || []).join(' ')} ${p.code}`).includes(q)));
+    const items = Object.entries(QO.cart).filter(([, n]) => n > 0).map(([id, n]) => ({ p: prodById(id), n }));
+    const tot = items.reduce((a, { p, n }) => { const sub = n * (+p.salePrice || 0); return a + sub + Math.round((sub * defaultTax(p)) / 100); }, 0);
+    m.querySelector('#qo').innerHTML = `
+      <div class="qo-tab">
+        ${QO.newTab ? `<div class="grid g2"><div class="field"><label for="qo-name">Huésped o cliente</label><input class="in" id="qo-name" placeholder="Nombre" value="${esc(QO.name)}"></div><div class="field"><label for="qo-room">Habitación, cama o punto</label><input class="in" id="qo-room" placeholder="203 · Cama 4 · Bar" value="${esc(QO.room)}"></div></div>${tabs.length ? '<button class="btn sm ghost" id="qo-pick">Elegir una cuenta abierta</button>' : ''}`
+          : `<div class="field"><label for="qo-tabsel">Cuenta</label><div class="row" style="gap:6px;flex-wrap:nowrap"><select class="in" id="qo-tabsel">${tabs.map((t) => opt(t.id, `${ordTabLabel(t)} · ${money(t.total)}`, QO.tabId)).join('')}</select><button class="btn" id="qo-new">${ic('plus')} Nueva</button></div></div>`}
+      </div>
+      <input class="in" id="qo-q" type="search" placeholder="Buscar producto (cerveza, agua, desayuno…)" value="${esc(QO.q)}" autocomplete="off">
+      <div class="qo-cats"><button class="chip ${!QO.cat ? 'on' : ''}" data-qc="">Todo</button>${cats.map((c) => `<button class="chip ${QO.cat === c ? 'on' : ''}" data-qc="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+      <div class="qo-grid">${list.slice(0, 60).map((p) => `<button class="qo-tile ${QO.cart[p.id] ? 'on' : ''}" data-qp="${p.id}"><span class="qo-n">${esc(p.name)}</span><span class="qo-p">${money(+p.salePrice || 0)}</span>${QO.cart[p.id] ? `<span class="qo-b">${QO.cart[p.id]}</span>` : ''}</button>`).join('') || '<p class="muted small">No hay productos con ese nombre.</p>'}</div>
+      ${items.length ? `<div class="qo-cart">${items.map(({ p, n }) => `<div class="qo-line"><span>${esc(p.name)}</span><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn sm" data-qm="${p.id}" aria-label="Quitar uno">−</button><b class="num">${n}</b><button class="btn sm" data-qa="${p.id}" aria-label="Agregar uno">+</button></div><span class="num">${money(n * (+p.salePrice || 0))}</span></div>`).join('')}<div class="qo-line qo-tot"><span>Total con impuestos</span><span></span><b class="num">${money(tot)}</b></div></div>` : ''}`;
+    const send = $('#qo-send'); const n = items.reduce((a, x) => a + x.n, 0);
+    send.disabled = !n; send.textContent = n ? `Enviar ${n} ${n === 1 ? 'producto' : 'productos'} · ${money(tot)}` : 'Enviar pedido';
+    const qi = m.querySelector('#qo-q');
+    qi.oninput = () => { QO.q = qi.value; draw(); const x = m.querySelector('#qo-q'); x.focus(); x.setSelectionRange(QO.q.length, QO.q.length); };
+    m.querySelector('#qo-tabsel')?.addEventListener('change', (e) => (QO.tabId = e.target.value));
+    m.querySelector('#qo-name')?.addEventListener('input', (e) => (QO.name = e.target.value));
+    m.querySelector('#qo-room')?.addEventListener('input', (e) => (QO.room = e.target.value));
+    m.querySelector('#qo-new')?.addEventListener('click', () => { QO.newTab = true; draw(); m.querySelector('#qo-name').focus(); });
+    m.querySelector('#qo-pick')?.addEventListener('click', () => { QO.newTab = false; draw(); });
+    $$('[data-qc]', m).forEach((b) => (b.onclick = () => { QO.cat = b.dataset.qc; draw(); }));
+    $$('[data-qp]', m).forEach((b) => (b.onclick = () => { QO.cart[b.dataset.qp] = (QO.cart[b.dataset.qp] || 0) + 1; draw(); }));
+    $$('[data-qa]', m).forEach((b) => (b.onclick = () => { QO.cart[b.dataset.qa]++; draw(); }));
+    $$('[data-qm]', m).forEach((b) => (b.onclick = () => { QO.cart[b.dataset.qm] = Math.max(0, QO.cart[b.dataset.qm] - 1); draw(); }));
+  };
+  draw();
+  $('#qo-send').onclick = async (ev) => {
+    const items = Object.entries(QO.cart).filter(([, n]) => n > 0);
+    let tabId = QO.tabId;
+    const btn = ev.target; btn.disabled = true;
+    try {
+      if (QO.newTab) {
+        const name = QO.name.trim();
+        if (name.length < 2) { btn.disabled = false; return toast('Escribe el nombre del huésped o cliente.'); }
+        const t = await remote.req('/api/v1/orders/tabs', { method: 'POST', body: { customerName: name, room: QO.room.trim() || null } });
+        tabId = t.id; QO.newTab = false; QO.tabId = t.id;
+      }
+      if (!tabId) { btn.disabled = false; return toast('Elige la cuenta.'); }
+      let ok = 0; const bad = [];
+      for (const [productId, qty] of items) {
+        try { await remote.req(`/api/v1/orders/tabs/${tabId}/lines`, { method: 'POST', body: { productId, qty } }); ok++; delete QO.cart[productId]; }
+        catch (e) { bad.push(`${prodById(productId)?.name}: ${e.message}`); }
+      }
+      await loadOrders();
+      const t = ordTabById(tabId);
+      if (bad.length) { draw(); toast(`Se enviaron ${ok}; con error: ${bad.join('; ')}`); return; }
+      closeModal(); render(); toast(`Pedido enviado a ${t ? ordTabLabel(t) : 'la cuenta'} · cuenta en ${money(t?.total || 0)}`);
+    } catch (e) { btn.disabled = false; toast('No se envió el pedido: ' + e.message); }
+  };
+}
+/** Pre-cuenta para mostrar o imprimir al huésped (tirilla de 80 mm). No es factura. */
+function preBill(t) {
+  const live = t.lines.filter((l) => l.status !== 'anulado');
+  const w = window.open('', '_blank'); if (!w) return toast('El navegador bloqueó la ventana; permite ventanas emergentes.');
+  const row = (l) => { const sub = l.qty * l.price; return `<tr><td>${num(l.qty)} × ${esc(l.product)}</td><td class="n">${money(sub + Math.round((sub * l.taxPct) / 100))}</td></tr>`; };
+  w.document.write(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pre-cuenta ${esc(t.number)}</title>
+  <style>body{font:13px ui-monospace,Menlo,monospace;margin:0 auto;padding:12px;max-width:300px;color:#111}h1{font-size:15px;text-align:center;margin:0 0 4px}p{margin:2px 0;text-align:center}table{width:100%;border-collapse:collapse;margin:10px 0}td{padding:3px 0;vertical-align:top}.n{text-align:right;white-space:nowrap}.t td{border-top:1px dashed #555;padding-top:6px}.b{font-weight:700;font-size:15px}small{display:block;text-align:center;color:#444;margin-top:10px}@media print{button{display:none}}</style>
+  <h1>Capybara Hostel</h1><p>PRE-CUENTA · ${esc(t.number)}</p><p>${esc(t.customerName)}${t.room ? ' · ' + esc(t.room) : ''}</p><p>${new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' })}</p>
+  <table>${live.map(row).join('')}<tr class="t"><td>Subtotal</td><td class="n">${money(t.subtotal)}</td></tr><tr><td>Impuestos</td><td class="n">${money(t.tax)}</td></tr><tr class="b"><td>Total</td><td class="n">${money(t.total)}</td></tr></table>
+  <small>Este documento no es una factura. La factura electrónica se emite al pagar.</small><p style="margin-top:12px"><button onclick="print()">Imprimir</button></p>`);
+  w.document.close();
+}
+
+/* Mi turno: acceso directo para tomar pedidos (inicio del mesero) */
+const _rMT9 = RENDER.miturno;
+RENDER.miturno = () => {
+  const html = _rMT9();
+  if (!ordApi() || !can('facturacion.crear')) return html;
+  const open = ordOpenTabs();
+  const card = `<div class="card qo-card"><div class="card-h"><h2>Pedidos</h2><span class="spacer"></span><button class="btn pri" id="mt-quick">${ic('plus')} Tomar pedido</button></div>
+    <p class="muted small" style="margin:0">${open.length ? `${open.length} ${open.length === 1 ? 'cuenta abierta' : 'cuentas abiertas'}: ${open.slice(-4).map((t) => esc(ordTabLabel(t))).join(' · ')}` : 'No hay cuentas abiertas. Al tomar el primer pedido abres la cuenta del huésped o la mesa.'}</p></div>`;
+  const i = html.indexOf('<div class="kpis">');
+  return i >= 0 ? html.slice(0, i) + card + html.slice(i) : card + html;
+};
+const _bMT9 = BIND.miturno;
+BIND.miturno = (el) => { _bMT9?.(el); $('#mt-quick', el)?.addEventListener('click', () => quickOrderModal()); };
 
 </script>
 
