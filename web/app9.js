@@ -29,14 +29,16 @@ remote.load = async () => { await _remoteLoad9(); await loadOrders(); };
 sheetExtraTabs = () => (!ordApi() ? [] : [
   ...(can('facturacion.crear') || can('facturacion.emitir') ? [['pedidos', 'Pedidos'], ['cuentas', 'Cuentas']] : []),
   ...(can('alegra.gestionar') || can('alegra.enviar') ? [['alegra', `Para Alegra${pendingAlegra().length ? ' · ' + pendingAlegra().length : ''}`]] : []),
+  ...(can('inventario.editar') ? [['precios', 'Precios']] : []),
 ]);
 const _sheetDef9 = sheetDef;
 sheetDef = function () {
   if (!SH._ord) { SH._ord = true; if (ordApi() && (can('facturacion.crear') || can('facturacion.emitir'))) { SH.tab = 'pedidos'; SH.c = 5; } }
-  if (!ordApi() && ['pedidos', 'cuentas', 'alegra'].includes(SH.tab)) SH.tab = 'ventas';
+  if (!ordApi() && ['pedidos', 'cuentas', 'alegra', 'precios'].includes(SH.tab)) SH.tab = 'ventas';
   if (SH.tab === 'pedidos') return pedidosDef();
   if (SH.tab === 'cuentas') return cuentasDef();
   if (SH.tab === 'alegra') return alegraDef();
+  if (SH.tab === 'precios') return preciosDef();
   return _sheetDef9();
 };
 
@@ -384,3 +386,34 @@ RENDER.miturno = () => {
 };
 const _bMT9 = BIND.miturno;
 BIND.miturno = (el) => { _bMT9?.(el); $('#mt-quick', el)?.addEventListener('click', () => quickOrderModal()); };
+
+/* ---------- Precios: lista de precios de venta editable como hoja ---------- */
+function preciosDef() {
+  const q = normalize(SH.q || '');
+  const money_ = can('costos.ver');
+  const rows = S.products.filter((p) => p.status === 'activo' && p.kind !== 'activo' && (!q || normalize(`${p.code} ${p.name} ${p.category}`).includes(q)))
+    .sort((a, b) => String(a.category).localeCompare(b.category) || a.name.localeCompare(b.name))
+    .map((p) => ({ id: p.id, code: p.code, name: p.name, category: p.category, unit: p.unit, salePrice: +p.salePrice || 0, taxPct: p.saleTaxPct == null ? defaultTax(p) : +p.saleTaxPct, avgCost: +p.avgCost || 0, _p: p }));
+  const withTax = (r) => r.salePrice + Math.round((r.salePrice * r.taxPct) / 100);
+  return {
+    title: 'Precios', noDelete: true, rows,
+    locked: () => !can('inventario.editar'),
+    cols: [
+      { num: false, k: 'code', h: 'Código', w: 90, t: 'calc', f: (r) => r.code }, { num: false, k: 'name', h: 'Producto', w: 230, t: 'calc', f: (r) => r.name },
+      { num: false, k: 'category', h: 'Categoría', w: 120, t: 'calc', f: (r) => r.category }, { num: false, k: 'unit', h: 'Unidad', w: 90, t: 'calc', f: (r) => r.unit },
+      { k: 'salePrice', h: 'Precio de venta', w: 120, t: 'money' }, { k: 'taxPct', h: 'Impuesto', w: 100, t: 'tax' },
+      { k: 'final', h: 'Precio al público', w: 130, t: 'calc', f: withTax, fx: (n) => `=E${n}*(1+F${n})` },
+      ...(money_ ? [{ k: 'avgCost', h: 'Costo promedio', w: 120, t: 'calc', f: (r) => r.avgCost }, { k: 'margen', h: 'Margen', w: 90, t: 'calc', num: true, f: (r) => (r.salePrice ? `${Math.round(((r.salePrice - r.avgCost) / r.salePrice) * 100)} %` : '—') }] : []),
+      { num: false, k: 'st', h: 'Revisión', w: 160, t: 'calc', f: (r) => (!r.salePrice ? 'Sin precio: no se puede vender' : money_ && r.avgCost && r.salePrice < r.avgCost ? 'Se vende por debajo del costo' : '') },
+    ],
+    totals: {},
+    onChange: async (r, c) => {
+      if (!['salePrice', 'taxPct'].includes(c.k)) return;
+      const body = c.k === 'salePrice' ? { salePrice: +r.salePrice || 0 } : { saleTaxPct: +r.taxPct };
+      try { await remote.req(`/api/v1/products/${r.id}`, { method: 'PATCH', body }); Object.assign(r._p, c.k === 'salePrice' ? { salePrice: body.salePrice } : { saleTaxPct: body.saleTaxPct }); save(); render(); }
+      catch (e) { toast('No se guardó el precio: ' + e.message); await remote.load(); render(); }
+    },
+    toolbar: () => { const sin = rows.filter((r) => !r.salePrice).length; return `<span class="small muted">${rows.length} productos${sin ? ` · <b class="neg">${sin} sin precio</b>` : ''}</span><span class="spacer"></span><span class="small muted">Escribe el precio y Enter; puedes pegar una columna de precios desde Excel o Sheets.</span>`; },
+    footer: () => `<p class="muted small" style="margin:0">El precio de venta es sin impuestos; el pedido y la factura suman el impuesto. Si el impuesto no se elige, se usa el de la categoría (INC 8 % en bar y restaurante, IVA 19 % en lo demás).</p>`,
+  };
+}

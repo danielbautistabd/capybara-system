@@ -121,9 +121,10 @@ r.get('/dashboard/series', perm('tablero.ver'), asyncH(async (req, res) => {
 /* ============ Productos ============ */
 const productSchema = z.object({
   code: z.string().min(1), barcode: z.string().optional().nullable(), name: z.string().min(2), aliases: z.array(z.string()).default([]),
-  description: z.string().optional().nullable(), categoryId: z.string(), kind: z.enum(['consumible', 'menaje', 'activo']).default('consumible'),
+  description: z.string().optional().nullable(), categoryId: z.string(), kind: z.enum(['consumible', 'menaje', 'activo', 'servicio']).default('consumible'),
   unit: z.string().default('unidad'), stockInit: z.number().default(0), stockMin: z.number().default(0), stockMax: z.number().optional().nullable(),
   avgCost: z.number().default(0), supplierId: z.string().optional().nullable(), location: z.string().optional().nullable(),
+  salePrice: z.number().min(0).optional(), saleTaxPct: z.union([z.literal(0), z.literal(5), z.literal(8), z.literal(19)]).nullable().optional(), // precio al público e impuesto (vacío = según categoría)
   expiresAt: z.coerce.date().optional().nullable(), photoUrl: z.string().optional().nullable(), notes: z.string().optional().nullable(),
 });
 

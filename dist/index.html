@@ -2006,7 +2006,7 @@ const remoteAct = {
   voidMv: (id, reason) => remote.req(`/api/v1/movements/${id}/void`, { method: 'POST', body: { reason } }),
   savePurchase: (pu, approve) => remote.req('/api/v1/purchases', { method: 'POST', body: { supplierId: pu.supplierId, invoice: pu.invoice, purchasedAt: pu.purchasedAt, receivedAt: pu.receivedAt, items: pu.items.map((i) => ({ productId: i.productId, qty: +i.qty, unit: i.unit, unitCost: +i.unitCost })), tax: +pu.tax || 0, discount: +pu.discount || 0, payMethod: pu.payMethod, receivedBy: pu.receivedBy, notes: pu.notes, approve } }),
   approvePurchase: (id) => remote.req(`/api/v1/purchases/${id}/approve`, { method: 'POST' }),
-  saveProduct: (p) => { const body = { code: p.code, barcode: p.barcode || null, name: p.name, aliases: p.aliases, description: p.description, categoryId: catId(p.category), kind: p.kind, unit: p.unit, stockMin: +p.stockMin, stockMax: p.stockMax ? +p.stockMax : null, avgCost: +p.avgCost, supplierId: p.supplierId || null, location: p.location, expiresAt: p.expiresAt || null, notes: p.notes }; return p.id && !p.id.startsWith('p_new') && S.products.some((x) => x.id === p.id) ? remote.req(`/api/v1/products/${p.id}`, { method: 'PATCH', body }) : remote.req('/api/v1/products', { method: 'POST', body: { ...body, stockInit: +p.stockInit || 0 } }); },
+  saveProduct: (p) => { const body = { code: p.code, barcode: p.barcode || null, name: p.name, aliases: p.aliases, description: p.description, categoryId: catId(p.category), kind: p.kind, unit: p.unit, stockMin: +p.stockMin, stockMax: p.stockMax ? +p.stockMax : null, avgCost: +p.avgCost, salePrice: +p.salePrice || 0, saleTaxPct: p.saleTaxPct == null || p.saleTaxPct === '' ? null : +p.saleTaxPct, supplierId: p.supplierId || null, location: p.location, expiresAt: p.expiresAt || null, notes: p.notes }; return p.id && !p.id.startsWith('p_new') && S.products.some((x) => x.id === p.id) ? remote.req(`/api/v1/products/${p.id}`, { method: 'PATCH', body }) : remote.req('/api/v1/products', { method: 'POST', body: { ...body, stockInit: +p.stockInit || 0 } }); },
   saveSupplier: (s) => (s.id ? remote.req(`/api/v1/suppliers/${s.id}`, { method: 'PATCH', body: s }) : remote.req('/api/v1/suppliers', { method: 'POST', body: s })),
   saveExpense: (e) => remote.req('/api/v1/expenses', { method: 'POST', body: { ...e, amount: +e.amount } }),
   saveCounts: (items) => remote.req('/api/v1/counts', { method: 'POST', body: { items: items.map((i) => ({ productId: i.productId, qty: +i.qty })) } }),
@@ -2404,6 +2404,7 @@ function productForm(p = null) {
     </div>
     <datalist id="units">${['unidad', 'botella', 'lata', 'bolsa', 'caja', 'paquete', 'rollo', 'kg', 'g', 'L', 'ml', 'juego', 'porción'].map((u) => `<option value="${u}">`).join('')}</datalist>
     <div class="grid g4">${F_('stockInit', 'Stock inicial', p.stockInit, 'number', `step="any" ${isNew ? '' : 'disabled title="El stock inicial no se edita; usa un ajuste de inventario"'}`)}${F_('stockMin', 'Stock mínimo', p.stockMin, 'number', 'step="any"')}${F_('stockMax', 'Stock máximo', p.stockMax, 'number', 'step="any"')}${F_('avgCost', 'Costo promedio (COP)', p.avgCost, 'number', 'step="50"')}</div>
+    <div class="grid g4">${F_('salePrice', 'Precio de venta (COP)', p.salePrice ?? 0, 'number', 'step="100" min="0"')}<div class="field"><label for="pf-saleTaxPct">Impuesto de venta</label><select class="in" id="pf-saleTaxPct">${[['', 'Según categoría'], ['0', 'Exento 0 %'], ['5', 'IVA 5 %'], ['8', 'INC 8 %'], ['19', 'IVA 19 %']].map(([v, l]) => opt(v, l, p.saleTaxPct == null ? '' : String(p.saleTaxPct))).join('')}</select></div></div>
     <div class="grid g4">${F_('location', 'Ubicación física', p.location)}${F_('expiresAt', 'Fecha de vencimiento', p.expiresAt || '', 'date')}<div class="field" style="grid-column:span 2"><label for="pf-aliases">Alias para WhatsApp (separados por coma)</label><input class="in" id="pf-aliases" value="${esc((p.aliases || []).join(', '))}" placeholder="pola, cerveza, club"></div></div>
     <div class="grid g2"><div class="field"><label for="pf-description">Descripción</label><textarea class="in" id="pf-description" rows="2">${esc(p.description)}</textarea></div><div class="field"><label for="pf-notes">Observaciones</label><textarea class="in" id="pf-notes" rows="2">${esc(p.notes)}</textarea></div></div>
     <div class="row"><div class="field"><label for="pf-photo">Fotografía</label><input type="file" accept="image/*" class="in" id="pf-photo"></div>${p.photo ? `<img src="${p.photo}" alt="Foto actual" style="height:56px;border-radius:9px">` : ''}${!isNew ? `<span class="spacer"></span><span class="muted small">Valor disponible: <b class="num">${money(Math.max(0, stockOf(p)) * p.avgCost)}</b></span>` : ''}</div>`,
@@ -2414,6 +2415,7 @@ function productForm(p = null) {
     if (S.products.some((x) => x.code === g('code') && x.id !== p.id)) { toast(`El código ${g('code')} ya existe.`); return; }
     const photo = await readFile(m.querySelector('#pf-photo'));
     const out = { ...p, code: g('code'), barcode: g('barcode'), name: g('name'), category: g('category'), kind: g('kind'), unit: g('unit') || 'unidad', supplierId: g('supplierId') || null, stockMin: +g('stockMin') || 0, stockMax: g('stockMax') ? +g('stockMax') : null, avgCost: +g('avgCost') || 0, location: g('location'), expiresAt: g('expiresAt') || null, aliases: g('aliases').split(',').map((s) => s.trim()).filter(Boolean), description: g('description'), notes: g('notes'), photo: photo?.data || p.photo };
+    out.salePrice = Math.max(0, +g('salePrice') || 0); out.saleTaxPct = g('saleTaxPct') === '' ? null : +g('saleTaxPct');
     if (isNew) { out.stockInit = +g('stockInit') || 0; out.lastPrice = out.avgCost; }
     closeModal(); await run('saveProduct', out); toast(isNew ? 'Producto creado' : 'Producto actualizado');
   };
@@ -5039,14 +5041,16 @@ remote.load = async () => { await _remoteLoad9(); await loadOrders(); };
 sheetExtraTabs = () => (!ordApi() ? [] : [
   ...(can('facturacion.crear') || can('facturacion.emitir') ? [['pedidos', 'Pedidos'], ['cuentas', 'Cuentas']] : []),
   ...(can('alegra.gestionar') || can('alegra.enviar') ? [['alegra', `Para Alegra${pendingAlegra().length ? ' · ' + pendingAlegra().length : ''}`]] : []),
+  ...(can('inventario.editar') ? [['precios', 'Precios']] : []),
 ]);
 const _sheetDef9 = sheetDef;
 sheetDef = function () {
   if (!SH._ord) { SH._ord = true; if (ordApi() && (can('facturacion.crear') || can('facturacion.emitir'))) { SH.tab = 'pedidos'; SH.c = 5; } }
-  if (!ordApi() && ['pedidos', 'cuentas', 'alegra'].includes(SH.tab)) SH.tab = 'ventas';
+  if (!ordApi() && ['pedidos', 'cuentas', 'alegra', 'precios'].includes(SH.tab)) SH.tab = 'ventas';
   if (SH.tab === 'pedidos') return pedidosDef();
   if (SH.tab === 'cuentas') return cuentasDef();
   if (SH.tab === 'alegra') return alegraDef();
+  if (SH.tab === 'precios') return preciosDef();
   return _sheetDef9();
 };
 
@@ -5394,6 +5398,37 @@ RENDER.miturno = () => {
 };
 const _bMT9 = BIND.miturno;
 BIND.miturno = (el) => { _bMT9?.(el); $('#mt-quick', el)?.addEventListener('click', () => quickOrderModal()); };
+
+/* ---------- Precios: lista de precios de venta editable como hoja ---------- */
+function preciosDef() {
+  const q = normalize(SH.q || '');
+  const money_ = can('costos.ver');
+  const rows = S.products.filter((p) => p.status === 'activo' && p.kind !== 'activo' && (!q || normalize(`${p.code} ${p.name} ${p.category}`).includes(q)))
+    .sort((a, b) => String(a.category).localeCompare(b.category) || a.name.localeCompare(b.name))
+    .map((p) => ({ id: p.id, code: p.code, name: p.name, category: p.category, unit: p.unit, salePrice: +p.salePrice || 0, taxPct: p.saleTaxPct == null ? defaultTax(p) : +p.saleTaxPct, avgCost: +p.avgCost || 0, _p: p }));
+  const withTax = (r) => r.salePrice + Math.round((r.salePrice * r.taxPct) / 100);
+  return {
+    title: 'Precios', noDelete: true, rows,
+    locked: () => !can('inventario.editar'),
+    cols: [
+      { num: false, k: 'code', h: 'Código', w: 90, t: 'calc', f: (r) => r.code }, { num: false, k: 'name', h: 'Producto', w: 230, t: 'calc', f: (r) => r.name },
+      { num: false, k: 'category', h: 'Categoría', w: 120, t: 'calc', f: (r) => r.category }, { num: false, k: 'unit', h: 'Unidad', w: 90, t: 'calc', f: (r) => r.unit },
+      { k: 'salePrice', h: 'Precio de venta', w: 120, t: 'money' }, { k: 'taxPct', h: 'Impuesto', w: 100, t: 'tax' },
+      { k: 'final', h: 'Precio al público', w: 130, t: 'calc', f: withTax, fx: (n) => `=E${n}*(1+F${n})` },
+      ...(money_ ? [{ k: 'avgCost', h: 'Costo promedio', w: 120, t: 'calc', f: (r) => r.avgCost }, { k: 'margen', h: 'Margen', w: 90, t: 'calc', num: true, f: (r) => (r.salePrice ? `${Math.round(((r.salePrice - r.avgCost) / r.salePrice) * 100)} %` : '—') }] : []),
+      { num: false, k: 'st', h: 'Revisión', w: 160, t: 'calc', f: (r) => (!r.salePrice ? 'Sin precio: no se puede vender' : money_ && r.avgCost && r.salePrice < r.avgCost ? 'Se vende por debajo del costo' : '') },
+    ],
+    totals: {},
+    onChange: async (r, c) => {
+      if (!['salePrice', 'taxPct'].includes(c.k)) return;
+      const body = c.k === 'salePrice' ? { salePrice: +r.salePrice || 0 } : { saleTaxPct: +r.taxPct };
+      try { await remote.req(`/api/v1/products/${r.id}`, { method: 'PATCH', body }); Object.assign(r._p, c.k === 'salePrice' ? { salePrice: body.salePrice } : { saleTaxPct: body.saleTaxPct }); save(); render(); }
+      catch (e) { toast('No se guardó el precio: ' + e.message); await remote.load(); render(); }
+    },
+    toolbar: () => { const sin = rows.filter((r) => !r.salePrice).length; return `<span class="small muted">${rows.length} productos${sin ? ` · <b class="neg">${sin} sin precio</b>` : ''}</span><span class="spacer"></span><span class="small muted">Escribe el precio y Enter; puedes pegar una columna de precios desde Excel o Sheets.</span>`; },
+    footer: () => `<p class="muted small" style="margin:0">El precio de venta es sin impuestos; el pedido y la factura suman el impuesto. Si el impuesto no se elige, se usa el de la categoría (INC 8 % en bar y restaurante, IVA 19 % en lo demás).</p>`,
+  };
+}
 
 </script>
 
