@@ -52,8 +52,8 @@ export const config = {
   storage: {
     driver: process.env.STORAGE_DRIVER || 'local', // local | supabase
     dir: process.env.UPLOAD_DIR || './uploads',
-    supabaseUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),
-    supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY, // solo en el servidor, nunca en el frontend
+    supabaseUrl: (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, ''), // la integración de Vercel también crea NEXT_PUBLIC_SUPABASE_URL
+    supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY, // solo en el servidor, nunca en el frontend
     bucket: process.env.SUPABASE_BUCKET || 'evidencias',
   },
   cronSecret: process.env.CRON_SECRET, // Supabase Cron lo envía en Authorization: Bearer …
